@@ -1,0 +1,33 @@
+# Professional Role Classification
+# Heuristic fallback used when AI analysis is unavailable.
+# Maps task descriptions to professional billing roles and task types.
+#
+# Format: role_name | trigger_keywords (comma-separated, case-insensitive)
+
+[professional_roles]
+QA Engineer              | debug, fix, error, bug, crash, broken, test, assert, validate, verify
+Frontend Developer       | .html, .css, .jsx, .tsx, visual, layout, style, component, ui, ux, render
+Software Engineer        | .py, .js, .ts, .go, .rs, python, javascript, typescript, code, implement, build, function, module, class, api
+Data Analyst             | sql, query, dashboard, kpi, dataset, dataframe, pivot, bi report, power bi, tableau, chart, metric
+Data Engineer            | pipeline, etl, ingestion, schema, warehouse, spark, databricks, airflow, kafka
+DevOps Engineer          | deploy, dockerfile, kubernetes, terraform, ci/cd, github action, workflow, yaml, helm, container
+Solutions Architect      | architecture, diagram, design pattern, microservice, integration, system design, scalability
+Security Engineer        | auth, authentication, authorization, oauth, jwt, permission, vulnerability, encryption, secret
+Technical Writer         | readme, documentation, changelog, docstring, write docs, update docs, spec, guide
+Product Manager          | roadmap, user story, prioritize, backlog, product requirement, prd, sprint, stakeholder
+Program Manager          | timeline, milestone, project plan, resource, risk, status update, delivery
+Business Analyst         | requirement, process, workflow, use case, acceptance criteria, gap analysis
+Management Consultant    | strategy, recommendation, framework, analysis, business case, executive, presentation
+UX Designer              | wireframe, prototype, mockup, user research, persona, journey map, figma, usability
+Research Scientist       | model, experiment, hypothesis, statistical, analysis, paper, literature, research
+Financial Analyst        | forecast, budget, roi, cost, revenue, financial model, p&l, variance
+Risk & Compliance Analyst | compliance, audit, regulation, gdpr, policy, control, risk assessment
+Domain Expert            | domain, subject matter, expert, specialist
+
+[task_types]
+# task_type | trigger_keywords
+Development      | create, implement, build, write, generate, code, develop, feature, module, function, class, component
+Bug Fix & Debug  | bug, fix, error, crash, broken, debug, diagnose, issue, failing, exception, traceback, not working
+Analysis & Research | analyse, analyze, research, investigate, compare, evaluate, explore, understand, why, how does, what is
+Design & UX      | design, layout, visual, style, wireframe, mockup, prototype, ui, ux, appearance, branding
+Execution & Ops  | deploy, commit, push, run, execute, install, configure, setup, migrate, release, ship
