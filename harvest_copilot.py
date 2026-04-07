@@ -20,20 +20,10 @@ _APPROVALS = {
     "got it", "understood", "makes sense",
 }
 
-# Checked in priority order — most specific first, Building last.
-# Default fallback is "Iterating" (most residual Copilot interactions are refinements).
-_INTENT_CATEGORIES = [
-    ("Shipping",      _re.compile(r"\b(commit|push|pr|pull.request|merge|deploy|ship|release|branch|tag)\b", _re.I)),
-    ("Investigating", _re.compile(r"\b(why does|why is|what.s going on|debug|diagnose|look at this error|what.s wrong|trace|root cause|broken|fails|failing|error|exception|issue|not working)\b", _re.I)),
-    ("Testing",       _re.compile(r"\b(test|run|execute|rerun|verify|validate|smoke|try it|does it work|assert|confirm)\b", _re.I)),
-    ("Researching",   _re.compile(r"\b(what.s the|how does|how do|are there|can i|cost|limit|explain|compare|difference|option|which|best way|recommend|what is)\b", _re.I)),
-    ("Planning",      _re.compile(r"\b(plan|propose|approach|strategy|phase|prioriti|outline|roadmap|next step|think about|before we|should we)\b", _re.I)),
-    ("Designing",     _re.compile(r"\b(redesign|design|visual|layout|style|look like|look more|spacing|appearance|prototype|mockup|branding|rethink|different approach|organiz|arrange|the layout|the design)\b", _re.I)),
-    ("Configuring",   _re.compile(r"\b(config|configure|setting|enable|disable|turn on|turn off|parameter|env|environment|credential|auth|alias|install)\b", _re.I)),
-    ("Navigating",    _re.compile(r"\b(open|find|search|list|show me|where is|navigate|look at|read|browse|display|what.s in)\b", _re.I)),
-    ("Building",      _re.compile(r"\b(create|generate|implement|write|build|produce|initialize|scaffold|new feature|from scratch|set up|add new)\b", _re.I)),
-    ("Iterating",     _re.compile(r"\b(fix|adjust|improve|refine|tweak|change|move|swap|resize|make it|slightly|update|modify|correct|revise|redo|clean|rename|remove|replace|add)\b", _re.I)),
-]
+# Intent categories loaded from prompts/intent_classification.txt at import time.
+# Falls back to an empty list; _classify_intent defaults to "Iterating" when no match.
+from analyze import load_intent_categories as _load_intent_categories
+_INTENT_CATEGORIES = _load_intent_categories()
 
 
 def _is_approval(text: str) -> bool:

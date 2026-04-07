@@ -56,6 +56,94 @@ def _load_taxonomy() -> tuple:
     return tuple(domain) or DOMAIN_SKILLS, tuple(tech) or TECH_SKILLS
 
 
+def load_intent_categories() -> list[tuple[str, re.Pattern]]:
+    """Load intent classification patterns from prompts/intent_classification.txt.
+
+    Returns a list of (intent_name, compiled_regex) tuples in priority order.
+    Falls back to a minimal hardcoded set if the file is missing.
+    """
+    path = Path(__file__).parent / "prompts" / "intent_classification.txt"
+    if not path.exists():
+        return []   # callers should handle empty list with their own fallback
+
+    categories = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("["):
+            continue
+        # Split on first two pipes only — pattern may contain | for regex alternation
+        first, _, rest = line.partition("|")
+        if not rest:
+            continue
+        _color, _, pattern = rest.partition("|")
+        intent = first.strip()
+        pattern = pattern.strip()
+        if intent and pattern:
+            try:
+                categories.append((intent, re.compile(pattern, re.I)))
+            except re.error:
+                pass  # skip malformed patterns silently
+    return categories
+
+
+def load_role_classification() -> dict:
+    """Load role and task-type heuristics from prompts/role_classification.txt.
+
+    Returns a dict with:
+      'roles':      list of (role_name, keywords_list) in match-priority order
+      'task_types': dict mapping task_type_name → keywords_list
+      'intent_to_task_type': dict mapping intent_name → task_type_name
+    """
+    path = Path(__file__).parent / "prompts" / "role_classification.txt"
+    result = {"roles": [], "task_types": {}, "intent_to_task_type": {}}
+    if not path.exists():
+        return result
+
+    section = None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line == "[professional_roles]":
+            section = "roles"
+            continue
+        if line == "[task_types]":
+            section = "task_types"
+            continue
+        if line.startswith("["):
+            section = None
+            continue
+
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) < 2:
+            continue
+
+        name    = parts[0]
+        keywords = [k.strip().lower() for k in parts[1].split(",") if k.strip()]
+
+        if section == "roles":
+            result["roles"].append((name, keywords))
+        elif section == "task_types":
+            result["task_types"][name] = keywords
+
+    # Build intent → task_type lookup from task_type keywords
+    # (used by fallback analysis to map message intent → task type)
+    _INTENT_TASK_MAP = {
+        "Building":      "Development",
+        "Iterating":     "Development",
+        "Investigating": "Bug Fix & Debug",
+        "Testing":       "Bug Fix & Debug",
+        "Designing":     "Design & UX",
+        "Researching":   "Analysis & Research",
+        "Planning":      "Analysis & Research",
+        "Shipping":      "Execution & Ops",
+        "Configuring":   "Execution & Ops",
+        "Navigating":    "Analysis & Research",
+    }
+    result["intent_to_task_type"] = _INTENT_TASK_MAP
+    return result
+
+
 _DOMAIN_SKILLS, _TECH_SKILLS = _load_taxonomy()
 
 
@@ -732,6 +820,18 @@ def _api_analyze(sessions: list, backend: str, cred: str) -> dict | None:
 
 def _fallback_analysis(target_date: str, sessions: list) -> dict:
     """Heuristic fallback when API is unavailable."""
+    _role_cfg      = load_role_classification()
+    _intent_to_tt  = _role_cfg.get("intent_to_task_type", {})
+    _role_keywords = _role_cfg.get("roles", [])
+
+    def _infer_role(text: str) -> str:
+        """Pick the best-matching professional role from the text."""
+        tl = text.lower()
+        for role, keywords in _role_keywords:
+            if any(kw in tl for kw in keywords):
+                return role
+        return "Software Engineer"
+
     goals = []
     for s in sessions:
         proj      = s.get("project", "unknown")
@@ -745,7 +845,6 @@ def _fallback_analysis(target_date: str, sessions: list) -> dict:
             text  = msg.get("text", "")[:80]
             tools = msg.get("tools_after", [])
             n_tools = len(tools)
-            # Estimate hours by tool count
             if n_tools <= 2:
                 hours = 0.25
             elif n_tools <= 5:
@@ -757,23 +856,18 @@ def _fallback_analysis(target_date: str, sessions: list) -> dict:
             else:
                 hours = 3.0
 
-            intent = msg.get("intent", "Building")
-            task_type = {
-                "Building": "Development",
-                "Investigating": "Bug Fix & Debug",
-                "Designing": "Design & UX",
-                "Researching": "Analysis & Research",
-                "Shipping": "Execution & Ops",
-            }.get(intent, "Development")
+            intent    = msg.get("intent", "Building")
+            task_type = _intent_to_tt.get(intent, "Development")
+            role      = _infer_role(text)
 
             tasks.append({
-                "title": text[:50] or f"Worked on {proj}",
-                "what_got_done": text[:80] or f"Completed task in {proj}",
-                "domain_skills": ["Technical Research"],
-                "tech_skills": [],
-                "task_type": task_type,
-                "professional_roles": ["Software Engineer"],
-                "human_hours": hours,
+                "title":              text[:50] or f"Worked on {proj}",
+                "what_got_done":      text[:80] or f"Completed task in {proj}",
+                "domain_skills":      ["Technical Research"],
+                "tech_skills":        [],
+                "task_type":          task_type,
+                "professional_roles": [role],
+                "human_hours":        hours,
             })
 
         total_hours = round(sum(t["human_hours"] for t in tasks) * 4) / 4
