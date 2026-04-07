@@ -1794,7 +1794,7 @@ def _all_view(copilot_agg: dict | None, claude_agg: dict | None,
       {_e(date_range_str)} &nbsp;·&nbsp; GitHub Copilot + Claude Combined Report
     </div>
     <div style="font-size:20px;font-weight:700;color:#fff;line-height:1.3">
-      {_fmt_h(total_h)} of AI-assisted work across {total_proj} projects
+      {_fmt_h(total_h)} of human effort equivalent assistance provided by AI across {total_proj} projects
     </div>
   </td>
 </tr>"""
