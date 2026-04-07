@@ -1436,12 +1436,13 @@ def _heatmap_row(day_rows: list, heatmap_id: str) -> str:
     if not day_rows:
         return ""
 
+    # Keys must match exactly what analyze.py writes (en-dash \u2013)
     _PERIODS = [
-        ("Early Morning", "5–9am"),
-        ("Morning",       "9am–12pm"),
-        ("Afternoon",     "12–5pm"),
-        ("Evening",       "5–9pm"),
-        ("Night",         "9pm–1am"),
+        ("Early Morning (5\u20139am)",  "5–9am"),
+        ("Morning (9am\u201312pm)",     "9am–12pm"),
+        ("Afternoon (12\u20135pm)",     "12–5pm"),
+        ("Evening (5\u20139pm)",        "5–9pm"),
+        ("Night (9pm\u20131am)",        "9pm–1am"),
     ]
     _SCALE = ["#dde8f5", "#a8c4e0", "#5a90c8", "#2660a4", "#0d3a6e"]
 
@@ -1590,7 +1591,7 @@ def _source_view(view_id: str, data: dict | None, source: str,
     evidence  = _evidence_section(data, accent, vid=view_id)
 
     # Per-source daily heatmap
-    _PERIODS_KEYS = ["Early Morning", "Morning", "Afternoon", "Evening", "Night"]
+    _PERIODS_KEYS = ["Early Morning (5\u20139am)", "Morning (9am\u201312pm)", "Afternoon (12\u20135pm)", "Evening (5\u20139pm)", "Night (9pm\u20131am)"]
     heatmap_day_rows = []
     if analyses:
         for a in sorted(analyses, key=lambda x: x["date"]):
@@ -1966,7 +1967,7 @@ def _all_view(copilot_agg: dict | None, claude_agg: dict | None,
 </td></tr>"""
 
     # ── Daily heatmap ─────────────────────────────────────────────────────────
-    _PERIODS_KEYS = ["Early Morning", "Morning", "Afternoon", "Evening", "Night"]
+    _PERIODS_KEYS = ["Early Morning (5\u20139am)", "Morning (9am\u201312pm)", "Afternoon (12\u20135pm)", "Evening (5\u20139pm)", "Night (9pm\u20131am)"]
     all_day_rows = []
     if analyses:
         for a in sorted(analyses, key=lambda x: x["date"]):
