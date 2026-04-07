@@ -370,11 +370,26 @@ def _kpi_row(data: dict, source: str, active_days: int, vid: str = "") -> str:
 </td></tr>"""
 
 
+def _roi_assumption_note(source: str) -> str:
+    """Small assumption footnote shown beneath the ROI number."""
+    if source == "copilot":
+        seats = f"GitHub Copilot ${COPILOT_SEAT_MONTHLY:.0f}/mo enterprise seat"
+    elif source == "claude":
+        seats = f"Claude Max ${CLAUDE_SEAT_MONTHLY:.0f}/mo enterprise seat"
+    else:
+        seats = (f"GitHub Copilot ${COPILOT_SEAT_MONTHLY:.0f} + "
+                 f"Claude ${CLAUDE_SEAT_MONTHLY:.0f} = "
+                 f"${COPILOT_SEAT_MONTHLY + CLAUDE_SEAT_MONTHLY:.0f}/mo enterprise seats")
+    return (f'<div style="text-align:center;margin-top:14px;font-size:10px;'
+            f'color:rgba(255,255,255,0.45);line-height:1.6">'
+            f'Assumed: {seats} &nbsp;·&nbsp; ${HOURLY_RATE:.0f}/hr developer rate'
+            f'</div>')
+
+
 def _roi_row(hours: float, n_days: int, source: str, active_min: int = 0) -> str:
     # Always use combined enterprise seat cost as the basis
     combined_monthly = COPILOT_SEAT_MONTHLY + CLAUDE_SEAT_MONTHLY
     seat_cost  = (COPILOT_SEAT_DAILY + CLAUDE_SEAT_DAILY) * n_days
-    seat_label = f"${combined_monthly:.0f}/mo enterprise seats"
 
     if seat_cost <= 0 or hours <= 0:
         return ""
@@ -390,13 +405,15 @@ def _roi_row(hours: float, n_days: int, source: str, active_min: int = 0) -> str
     else:
         speed_str = None
 
+    assumption = _roi_assumption_note(source)
+
     # Two-metric display when speed multiplier is available
     if speed_str:
         metrics_html = f"""
       <div style="display:flex;justify-content:center;align-items:center;gap:48px">
         <div style="text-align:center">
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
-                      color:rgba(255,255,255,0.55);margin-bottom:6px">ROI · {seat_label}</div>
+                      color:rgba(255,255,255,0.55);margin-bottom:6px">Return on Investment</div>
           <div style="font-size:52px;font-weight:800;color:#ffffff;line-height:1;letter-spacing:-2px">{leverage}x</div>
           <div style="font-size:11px;color:rgba(255,255,255,0.55);margin-top:4px">value on seat cost</div>
         </div>
@@ -412,8 +429,9 @@ def _roi_row(hours: float, n_days: int, source: str, active_min: int = 0) -> str
         metrics_html = f"""
       <div style="text-align:center">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
-                    color:rgba(255,255,255,0.65);margin-bottom:6px">AI Return on Investment ({seat_label})</div>
+                    color:rgba(255,255,255,0.65);margin-bottom:6px">Return on Investment</div>
         <div style="font-size:52px;font-weight:800;color:#ffffff;line-height:1;letter-spacing:-2px">{leverage}x</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.55);margin-top:4px">value on seat cost</div>
       </div>"""
 
     return f"""<tr><td style="padding:0;border-left:1px solid #dde1e7;border-right:1px solid #dde1e7">
@@ -421,9 +439,7 @@ def _roi_row(hours: float, n_days: int, source: str, active_min: int = 0) -> str
          style="background:{bg};border-collapse:collapse">
     <tbody><tr><td style="padding:22px 48px">
       {metrics_html}
-      <div style="text-align:center;margin-top:10px;font-size:12px;color:rgba(255,255,255,0.6)">
-        {_fmt_h(hours)} x ${HOURLY_RATE:.0f}/hr = <strong style="color:rgba(255,255,255,0.9)">${value:,.0f} value</strong>
-      </div>
+      {assumption}
     </td></tr></tbody>
   </table>
 </td></tr>"""
@@ -805,16 +821,26 @@ def _collab_section(data: dict, source: str, tool_name: str) -> str:
         f'</div>'
     )
 
+    _MODE_EXAMPLES = {
+        "Building":          "e.g. implement a feature, scaffold a module, write from scratch",
+        "Refining":          "e.g. tweak layout, adjust error handling, rename, polish copy",
+        "Designing":         "e.g. plan architecture, choose a pattern, rethink an approach",
+        "Researching":       "e.g. compare libraries, investigate a failure, understand behavior",
+        "Delegating":        "e.g. git commit & push, update README, install packages, configure CI",
+        "Course-correcting": "e.g. fix a wrong assumption, undo a bad change, redirect AI",
+    }
+
     def _mode_card(name, icon, desc, color, high_val, mins, pct, hrs):
         if mins == 0:
             return ""
-        bar_w = max(int(pct), 2)
-        # Display as minutes if < 60, otherwise hours
+        bar_w   = max(int(pct), 2)
         hrs_str = f"{int(mins)}m" if mins < 60 else _fmt_h(hrs)
-        left_border = f"border-left:3px solid {color};" if high_val else f"border-left:3px solid {color};"
+        example = _MODE_EXAMPLES.get(name, "")
+        example_html = (f'<div style="font-size:10px;color:#8a8a8a;font-style:italic;margin-top:3px">'
+                        f'{_e(example)}</div>') if example else ""
         return (
             f'<div style="background:#fff;border:1px solid #dde1e7;border-radius:9px;'
-            f'{left_border}padding:14px 16px;margin-bottom:10px">'
+            f'border-left:3px solid {color};padding:14px 16px;margin-bottom:10px">'
             f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
             f'<div style="font-size:13px;font-weight:700;color:#1b1f23">'
             f'<span style="margin-right:8px">{icon}</span>{_e(name)}</div>'
@@ -825,6 +851,7 @@ def _collab_section(data: dict, source: str, tool_name: str) -> str:
             f'</div>'
             f'<div style="font-size:11px;color:#6a737d">{_e(desc)} &nbsp;·&nbsp; '
             f'<strong style="color:#1b1f23">{_e(hrs_str)}</strong></div>'
+            f'{example_html}'
             f'</div>'
         )
 
@@ -846,25 +873,33 @@ def _collab_section(data: dict, source: str, tool_name: str) -> str:
 
 def _collab_comparison_section(copilot_modes: dict, claude_modes: dict,
                                copilot_active_min: float, claude_active_min: float) -> str:
-    """Side-by-side collaboration mode comparison between Copilot and Claude."""
+    """Stacked top/bottom comparison of collaboration modes between Copilot and Claude."""
     if not copilot_modes and not claude_modes:
         return ""
 
     _COLOR = {
-        "Designing":    "#7b1fa2",
-        "Researching":  "#1a7f37",
-        "Building":             "#0078d4",
-        "Refining":  "#0969da",
+        "Designing":         "#7b1fa2",
+        "Researching":       "#1a7f37",
+        "Building":          "#0078d4",
+        "Refining":          "#0969da",
         "Course-correcting": "#e65100",
-        "Delegating":  "#6a737d",
+        "Delegating":        "#6a737d",
     }
     _ICON = {
-        "Designing":    "🎨",
-        "Researching":  "🔬",
-        "Building":             "🏗",
-        "Refining":  "✨",
+        "Designing":         "🎨",
+        "Researching":       "🔬",
+        "Building":          "🏗",
+        "Refining":          "✨",
         "Course-correcting": "🔧",
-        "Delegating":  "⚡",
+        "Delegating":        "⚡",
+    }
+    _EXAMPLES = {
+        "Building":          "e.g. implement a feature, scaffold a module, write a function from scratch",
+        "Refining":          "e.g. tweak layout, adjust error handling, rename variables, polish copy",
+        "Designing":         "e.g. plan architecture, choose a pattern, rethink an approach",
+        "Researching":       "e.g. compare libraries, investigate a failure, understand unexpected behavior",
+        "Delegating":        "e.g. git commit & push, update README, install packages, configure CI",
+        "Course-correcting": "e.g. fix a wrong assumption, undo a bad change, redirect after an error",
     }
 
     all_modes = sorted(
@@ -887,19 +922,44 @@ def _collab_comparison_section(copilot_modes: dict, claude_modes: dict,
     insight_html = ""
     if top_div:
         mode_name, cop_p, cla_p, _ = top_div
-        leader   = "GitHub Copilot" if cop_p > cla_p else "Claude"
-        follower = "Claude" if cop_p > cla_p else "GitHub Copilot"
+        leader       = "GitHub Copilot" if cop_p > cla_p else "Claude"
+        follower     = "Claude"         if cop_p > cla_p else "GitHub Copilot"
         leader_pct   = max(cop_p, cla_p)
         follower_pct = min(cop_p, cla_p)
         insight_html = (
             f'<div style="background:#f6f8fa;border:1px solid #e1e4e8;border-radius:8px;'
-            f'padding:12px 16px;margin-bottom:18px;font-size:12px;color:#1b1f23;line-height:1.5">'
+            f'padding:12px 16px;margin-bottom:20px;font-size:12px;color:#1b1f23;line-height:1.5">'
             f'<strong>Biggest difference:</strong> <em>{_e(mode_name)}</em> — '
             f'{_e(leader)} {leader_pct:.0f}% vs {_e(follower)} {follower_pct:.0f}%'
             f'</div>'
         )
 
-    rows = ""
+    cop_active = f"{int(copilot_active_min)//60}h {int(copilot_active_min)%60}m" if copilot_active_min >= 60 else f"{int(copilot_active_min)}m"
+    cla_active = f"{int(claude_active_min)//60}h {int(claude_active_min)%60}m" if claude_active_min >= 60 else f"{int(claude_active_min)}m"
+
+    def _bar_row(tool_label, tool_color, pct, mins):
+        """Single horizontal bar row: label | ████░░░░ | pct · time"""
+        w       = max(int(pct), 1) if pct > 0 else 0
+        hrs_str = f"{int(mins)}m" if mins < 60 else f"{mins/60:.1f}h"
+        bar_html = (
+            f'<div style="background:#f0f2f5;border-radius:4px;height:10px;flex:1;overflow:hidden">'
+            f'<div style="background:{tool_color};border-radius:4px;height:10px;width:{w}%"></div>'
+            f'</div>'
+        ) if pct > 0 else (
+            f'<div style="background:#f0f2f5;border-radius:4px;height:10px;flex:1"></div>'
+        )
+        stat = f'<span style="font-size:11px;font-weight:700;color:{tool_color};white-space:nowrap;min-width:80px;text-align:right">{pct:.0f}% · {hrs_str}</span>' if pct > 0 else \
+               f'<span style="font-size:11px;color:#d0d7de;min-width:80px;text-align:right">—</span>'
+        return (
+            f'<div style="display:flex;align-items:center;gap:10px;padding:4px 0">'
+            f'<span style="font-size:10px;font-weight:700;color:{tool_color};text-transform:uppercase;'
+            f'letter-spacing:0.5px;min-width:120px;flex-shrink:0">{_e(tool_label)}</span>'
+            f'{bar_html}'
+            f'{stat}'
+            f'</div>'
+        )
+
+    mode_blocks = ""
     for mode in all_modes:
         cop_pct = copilot_modes.get(mode, 0) / cop_total * 100
         cla_pct = claude_modes.get(mode, 0) / cla_total * 100
@@ -908,60 +968,36 @@ def _collab_comparison_section(copilot_modes: dict, claude_modes: dict,
         color   = _COLOR.get(mode, "#6a737d")
         icon    = _ICON.get(mode, "")
 
-        def _bar(pct, color, mins, align="left"):
-            w       = max(int(pct), 1) if pct > 0 else 0
-            hrs_str = f"{int(mins)}m" if mins < 60 else f"{mins/60:.1f}h"
-            label   = f'<span style="font-size:10px;color:{color};font-weight:700;white-space:nowrap">{pct:.0f}% · {hrs_str}</span>'
-            if align == "right":
-                return (
-                    f'<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">'
-                    f'{label}'
-                    f'<div style="background:#f0f2f5;border-radius:4px;height:10px;width:80px;flex-shrink:0">'
-                    f'<div style="background:{color};border-radius:4px;height:10px;width:{w}%;min-width:{2 if w else 0}px;float:right"></div>'
-                    f'</div></div>'
-                ) if pct > 0 else f'<div style="text-align:right;font-size:10px;color:#d0d7de">—</div>'
-            else:
-                return (
-                    f'<div style="display:flex;align-items:center;gap:6px">'
-                    f'<div style="background:#f0f2f5;border-radius:4px;height:10px;width:80px;flex-shrink:0">'
-                    f'<div style="background:{color};border-radius:4px;height:10px;width:{w}%;min-width:{2 if w else 0}px"></div>'
-                    f'</div>'
-                    f'{label}'
-                    f'</div>'
-                ) if pct > 0 else f'<div style="font-size:10px;color:#d0d7de">—</div>'
+        cop_row = _bar_row("GitHub Copilot", ACCENT["copilot"], cop_pct, cop_min)
+        cla_row = _bar_row("Claude",         ACCENT["claude"],  cla_pct, cla_min)
+        example = _EXAMPLES.get(mode, "")
 
-        rows += f"""<tr style="border-bottom:1px solid #f0f2f5">
-  <td style="text-align:right;padding:7px 8px 7px 0;width:38%">{_bar(cop_pct, ACCENT["copilot"], cop_min, "right")}</td>
-  <td style="padding:7px 10px;text-align:center;white-space:nowrap;width:24%">
-    <span style="font-size:10px;margin-right:4px">{icon}</span>
-    <span style="font-size:11px;font-weight:600;color:{color}">{_e(mode)}</span>
-  </td>
-  <td style="padding:7px 0 7px 8px;width:38%">{_bar(cla_pct, ACCENT["claude"], cla_min, "left")}</td>
-</tr>"""
+        mode_blocks += f"""
+<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #f0f2f5">
+  <div style="margin-bottom:5px">
+    <span style="font-size:12px;font-weight:700;color:{color}">
+      <span style="margin-right:5px">{icon}</span>{_e(mode)}
+    </span>
+    {f'<span style="font-size:10px;color:#6a737d;margin-left:8px;font-style:italic">{_e(example)}</span>' if example else ""}
+  </div>
+  {cop_row}
+  {cla_row}
+</div>"""
 
-    cop_active = f"{int(copilot_active_min)//60}h {int(copilot_active_min)%60}m" if copilot_active_min >= 60 else f"{int(copilot_active_min)}m"
-    cla_active = f"{int(claude_active_min)//60}h {int(claude_active_min)%60}m" if claude_active_min >= 60 else f"{int(claude_active_min)}m"
-
-    header_row = f"""<tr style="border-bottom:2px solid #e1e4e8">
-  <td style="text-align:right;padding:0 8px 10px 0">
-    <span style="font-size:11px;font-weight:700;color:{ACCENT["copilot"]}">● GitHub Copilot</span>
-    <span style="font-size:10px;color:#6a737d;margin-left:6px">{cop_active} active</span>
-  </td>
-  <td style="padding:0 10px 10px;text-align:center">
-    <span style="font-size:10px;color:#6a737d;text-transform:uppercase;letter-spacing:0.5px">Mode</span>
-  </td>
-  <td style="padding:0 0 10px 8px">
-    <span style="font-size:11px;font-weight:700;color:{ACCENT["claude"]}">● Claude</span>
-    <span style="font-size:10px;color:#6a737d;margin-left:6px">{cla_active} active</span>
-  </td>
-</tr>"""
-
-    inner = f"""{_section_header("How I Collaborated", "Each bar = % of that tool's own active time — shows style, not volume")}
-<div style="padding:16px 24px 18px">
+    inner = f"""{_section_header("How I Collaborated", "Each bar = % of that tool's own active time — compare style, not volume")}
+<div style="padding:16px 24px 4px">
   {insight_html}
-  <table width="100%" cellpadding="0" cellspacing="0">
-    <tbody>{header_row}{rows}</tbody>
-  </table>
+  <div style="display:flex;gap:24px;margin-bottom:14px;font-size:11px;color:#6a737d">
+    <span>
+      <span style="font-weight:700;color:{ACCENT["copilot"]}">● GitHub Copilot</span>
+      &nbsp;<span style="color:#6a737d">{cop_active} active</span>
+    </span>
+    <span>
+      <span style="font-weight:700;color:{ACCENT["claude"]}">● Claude</span>
+      &nbsp;<span style="color:#6a737d">{cla_active} active</span>
+    </span>
+  </div>
+  {mode_blocks}
 </div>"""
     return _wrap_section(inner)
 
@@ -1671,7 +1707,7 @@ def _all_view(copilot_agg: dict | None, claude_agg: dict | None,
       <div style="display:flex;justify-content:center;align-items:center;gap:48px">
         <div style="text-align:center">
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
-                      color:rgba(255,255,255,0.55);margin-bottom:6px">ROI · ${combined_monthly:.0f}/mo enterprise seats</div>
+                      color:rgba(255,255,255,0.55);margin-bottom:6px">Return on Investment</div>
           <div style="font-size:52px;font-weight:800;color:#ffffff;line-height:1;letter-spacing:-2px">{leverage}x</div>
           <div style="font-size:11px;color:rgba(255,255,255,0.55);margin-top:4px">value on seat cost</div>
         </div>
@@ -1687,10 +1723,9 @@ def _all_view(copilot_agg: dict | None, claude_agg: dict | None,
         all_metrics_html = f"""
       <div style="text-align:center">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
-                    color:rgba(255,255,255,0.65);margin-bottom:8px">
-          Combined AI Return on Investment (${combined_monthly:.0f}/mo enterprise seats)
-        </div>
+                    color:rgba(255,255,255,0.65);margin-bottom:8px">Return on Investment</div>
         <div style="font-size:52px;font-weight:800;color:#ffffff;line-height:1;letter-spacing:-2px">{leverage}x</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.55);margin-top:4px">value on seat cost</div>
       </div>"""
 
     roi_row = f"""<tr><td style="padding:0;border-left:1px solid #dde1e7;border-right:1px solid #dde1e7">
@@ -1698,9 +1733,7 @@ def _all_view(copilot_agg: dict | None, claude_agg: dict | None,
          style="background:linear-gradient(135deg,#1a1a2e,#0F3460);border-collapse:collapse">
     <tbody><tr><td style="padding:22px 48px">
       {all_metrics_html}
-      <div style="text-align:center;margin-top:10px;font-size:12px;color:rgba(255,255,255,0.6)">
-        {_fmt_h(total_h)} x ${HOURLY_RATE:.0f}/hr = <strong style="color:rgba(255,255,255,0.9)">${total_h*HOURLY_RATE:,.0f} value</strong>
-      </div>
+      {_roi_assumption_note("combined")}
     </td></tr></tbody>
   </table>
 </td></tr>"""
