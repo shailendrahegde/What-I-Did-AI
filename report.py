@@ -26,12 +26,12 @@ TOKEN_PRICE_CACHE_CR = 3.75
 ACCENT = {
     "copilot":  "#8534F3",
     "claude":   "#DE7356",
-    "combined": "#8534F3",
+    "combined": "#2d6a9f",  # neutral slate-blue — not tied to either tool
 }
 ACCENT_BG = {
     "copilot":  "#f0e8ff",
     "claude":   "#fdf1ee",
-    "combined": "#f0e8ff",
+    "combined": "#eaf1f8",  # light slate-blue tint
 }
 # Banner gradient: dark-to-brand for detail page headers
 BANNER_BG = {
@@ -1770,7 +1770,7 @@ def _all_view(copilot_agg: dict | None, claude_agg: dict | None,
                            + (claude_agg  or {}).get("active_minutes", 0)),
     }
 
-    skills_row = _skills_section(combined_goals, ACCENT["copilot"])
+    skills_row = _skills_section(combined_goals, "#2d6a9f")  # neutral slate-blue for combined view
     collab_row = _collab_comparison_section(
         copilot_modes=(copilot_agg or {}).get("quality_modes", {}),
         claude_modes=(claude_agg   or {}).get("quality_modes", {}),
