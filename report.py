@@ -835,6 +835,131 @@ def _collab_section(data: dict, source: str, tool_name: str) -> str:
     return _wrap_section(inner)
 
 
+def _collab_comparison_section(copilot_modes: dict, claude_modes: dict,
+                               copilot_active_min: float, claude_active_min: float) -> str:
+    """Side-by-side collaboration mode comparison between Copilot and Claude."""
+    if not copilot_modes and not claude_modes:
+        return ""
+
+    _COLOR = {
+        "Creative partner":    "#7b1fa2",
+        "Research assistant":  "#1a7f37",
+        "Builder":             "#0078d4",
+        "Refinement partner":  "#0969da",
+        "Needed hand-holding": "#e65100",
+        "Grunt work handled":  "#6a737d",
+    }
+    _ICON = {
+        "Creative partner":    "🎨",
+        "Research assistant":  "🔬",
+        "Builder":             "🏗",
+        "Refinement partner":  "✨",
+        "Needed hand-holding": "🔧",
+        "Grunt work handled":  "⚡",
+    }
+
+    all_modes = sorted(
+        set(copilot_modes) | set(claude_modes),
+        key=lambda m: -(copilot_modes.get(m, 0) + claude_modes.get(m, 0))
+    )
+
+    cop_total = sum(copilot_modes.values()) or 1
+    cla_total = sum(claude_modes.values()) or 1
+
+    # Insight: biggest divergence between the two tools
+    divergences = []
+    for m in all_modes:
+        cop_pct = copilot_modes.get(m, 0) / cop_total * 100
+        cla_pct = claude_modes.get(m, 0) / cla_total * 100
+        divergences.append((m, cop_pct, cla_pct, abs(cop_pct - cla_pct)))
+    divergences.sort(key=lambda x: -x[3])
+    top_div = divergences[0] if divergences else None
+
+    insight_html = ""
+    if top_div:
+        mode_name, cop_p, cla_p, _ = top_div
+        leader   = "GitHub Copilot" if cop_p > cla_p else "Claude"
+        follower = "Claude" if cop_p > cla_p else "GitHub Copilot"
+        leader_pct   = max(cop_p, cla_p)
+        follower_pct = min(cop_p, cla_p)
+        insight_html = (
+            f'<div style="background:#f6f8fa;border:1px solid #e1e4e8;border-radius:8px;'
+            f'padding:12px 16px;margin-bottom:18px;font-size:12px;color:#1b1f23;line-height:1.5">'
+            f'<strong>Biggest difference:</strong> <em>{_e(mode_name)}</em> — '
+            f'{_e(leader)} {leader_pct:.0f}% vs {_e(follower)} {follower_pct:.0f}%'
+            f'</div>'
+        )
+
+    rows = ""
+    for mode in all_modes:
+        cop_pct = copilot_modes.get(mode, 0) / cop_total * 100
+        cla_pct = claude_modes.get(mode, 0) / cla_total * 100
+        cop_min = copilot_modes.get(mode, 0)
+        cla_min = claude_modes.get(mode, 0)
+        color   = _COLOR.get(mode, "#6a737d")
+        icon    = _ICON.get(mode, "")
+
+        def _bar(pct, color, mins, align="left"):
+            w       = max(int(pct), 1) if pct > 0 else 0
+            hrs_str = f"{int(mins)}m" if mins < 60 else f"{mins/60:.1f}h"
+            label   = f'<span style="font-size:10px;color:{color};font-weight:700;white-space:nowrap">{pct:.0f}% · {hrs_str}</span>'
+            if align == "right":
+                return (
+                    f'<div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">'
+                    f'{label}'
+                    f'<div style="background:#f0f2f5;border-radius:4px;height:10px;width:80px;flex-shrink:0">'
+                    f'<div style="background:{color};border-radius:4px;height:10px;width:{w}%;min-width:{2 if w else 0}px;float:right"></div>'
+                    f'</div></div>'
+                ) if pct > 0 else f'<div style="text-align:right;font-size:10px;color:#d0d7de">—</div>'
+            else:
+                return (
+                    f'<div style="display:flex;align-items:center;gap:6px">'
+                    f'<div style="background:#f0f2f5;border-radius:4px;height:10px;width:80px;flex-shrink:0">'
+                    f'<div style="background:{color};border-radius:4px;height:10px;width:{w}%;min-width:{2 if w else 0}px"></div>'
+                    f'</div>'
+                    f'{label}'
+                    f'</div>'
+                ) if pct > 0 else f'<div style="font-size:10px;color:#d0d7de">—</div>'
+
+        rows += f"""<tr style="border-bottom:1px solid #f0f2f5">
+  <td style="text-align:right;padding:7px 8px 7px 0;width:38%">{_bar(cop_pct, "#0078d4", cop_min, "right")}</td>
+  <td style="padding:7px 10px;text-align:center;white-space:nowrap;width:24%">
+    <span style="font-size:10px;margin-right:4px">{icon}</span>
+    <span style="font-size:11px;font-weight:600;color:{color}">{_e(mode)}</span>
+  </td>
+  <td style="padding:7px 0 7px 8px;width:38%">{_bar(cla_pct, "#7B2FBE", cla_min, "left")}</td>
+</tr>"""
+
+    cop_active = f"{int(copilot_active_min)//60}h {int(copilot_active_min)%60}m" if copilot_active_min >= 60 else f"{int(copilot_active_min)}m"
+    cla_active = f"{int(claude_active_min)//60}h {int(claude_active_min)%60}m" if claude_active_min >= 60 else f"{int(claude_active_min)}m"
+
+    header_row = f"""<tr style="border-bottom:2px solid #e1e4e8">
+  <td style="text-align:right;padding:0 8px 10px 0">
+    <span style="font-size:11px;font-weight:700;color:#0078d4">● GitHub Copilot</span>
+    <span style="font-size:10px;color:#6a737d;margin-left:6px">{cop_active} active</span>
+  </td>
+  <td style="padding:0 10px 10px;text-align:center">
+    <span style="font-size:10px;color:#6a737d;text-transform:uppercase;letter-spacing:0.5px">Mode</span>
+  </td>
+  <td style="padding:0 0 10px 8px">
+    <span style="font-size:11px;font-weight:700;color:#7B2FBE">● Claude</span>
+    <span style="font-size:10px;color:#6a737d;margin-left:6px">{cla_active} active</span>
+  </td>
+</tr>"""
+
+    inner = f"""{_section_header("How I Collaborated", "Comparing collaboration style — % of active engagement time per tool")}
+<div style="padding:16px 24px 18px">
+  {insight_html}
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tbody>{header_row}{rows}</tbody>
+  </table>
+  <div style="font-size:10px;color:#6a737d;margin-top:12px">
+    Bars show each tool's % of its own active engagement time. Compare shapes, not lengths.
+  </div>
+</div>"""
+    return _wrap_section(inner)
+
+
 def _timing_section(data: dict, source: str, tool_name: str,
                     copilot_buckets:        dict | None = None,
                     claude_buckets:         dict | None = None,
@@ -1605,7 +1730,12 @@ def _all_view(copilot_agg: dict | None, claude_agg: dict | None,
     }
 
     skills_row = _skills_section(combined_goals, "#0078d4")
-    collab_row = _collab_section(combined_data, "copilot", "AI tools")
+    collab_row = _collab_comparison_section(
+        copilot_modes=(copilot_agg or {}).get("quality_modes", {}),
+        claude_modes=(claude_agg   or {}).get("quality_modes", {}),
+        copilot_active_min=(copilot_agg or {}).get("active_minutes", 0),
+        claude_active_min=(claude_agg   or {}).get("active_minutes", 0),
+    ) if include_copilot and include_claude else _collab_section(combined_data, "copilot", "AI tools")
     timing_row = _timing_section(
         combined_data, "copilot", "AI tools",
         copilot_buckets=(copilot_agg or {}).get("time_buckets", {}),
