@@ -1429,12 +1429,108 @@ def _evidence_section(data: dict, accent: str, vid: str = "") -> str:
     border-left:1px solid #dde1e7;border-right:1px solid #dde1e7">{inner}</td></tr>"""
 
 
+# ── Daily heatmap (shared between all-view and per-source views) ───────────────
+
+def _heatmap_row(day_rows: list, heatmap_id: str) -> str:
+    """Build a collapsible daily heatmap row from [(date_str, {period: count})] data."""
+    if not day_rows:
+        return ""
+
+    _PERIODS = [
+        ("Early Morning", "5–9am"),
+        ("Morning",       "9am–12pm"),
+        ("Afternoon",     "12–5pm"),
+        ("Evening",       "5–9pm"),
+        ("Night",         "9pm–1am"),
+    ]
+    _SCALE = ["#dde8f5", "#a8c4e0", "#5a90c8", "#2660a4", "#0d3a6e"]
+
+    all_vals = [v for _, b in day_rows for v in b.values() if v > 0]
+    max_val  = max(all_vals) if all_vals else 1
+
+    def _cell_color(n):
+        if n == 0: return "#f0f2f5"
+        idx = min(int(n / max_val * len(_SCALE)), len(_SCALE) - 1)
+        return _SCALE[idx]
+
+    def _text_color(n):
+        return "#ffffff" if (n / max_val if max_val else 0) >= 0.5 else "#2d4a6e"
+
+    col_headers = "".join(
+        f'<th style="padding:6px 4px;text-align:center;font-size:9px;font-weight:700;'
+        f'color:#6a737d;text-transform:uppercase;letter-spacing:0.5px;width:18%">'
+        f'{name}<br><span style="font-weight:400;font-size:8px">{sub}</span></th>'
+        for name, sub in _PERIODS
+    )
+
+    rows_html = ""
+    for date_str, buckets in day_rows:
+        try:
+            dt  = datetime.strptime(date_str, "%Y-%m-%d")
+            lbl = (f'<span style="font-size:11px;font-weight:700">{dt.strftime("%b %d")}</span>'
+                   f'<br><span style="font-size:9px;color:#8a8a8a">{dt.strftime("%a")}</span>')
+        except Exception:
+            lbl = date_str
+
+        row_total = sum(buckets.values())
+        cells = ""
+        for period, _ in _PERIODS:
+            n  = buckets.get(period, 0)
+            bg = _cell_color(n)
+            tc = _text_color(n)
+            label = f'<span style="font-size:11px;font-weight:700;color:{tc}">{n}</span>' if n > 0 else ""
+            cells += (
+                f'<td style="padding:3px 4px">'
+                f'<div style="background:{bg};border-radius:6px;height:36px;'
+                f'display:flex;align-items:center;justify-content:center">'
+                f'{label}</div></td>'
+            )
+        rows_html += f"""<tr>
+  <td style="padding:3px 8px 3px 0;white-space:nowrap;text-align:right">{lbl}</td>
+  {cells}
+  <td style="padding:3px 0 3px 8px;font-size:10px;color:#6a737d;white-space:nowrap">{row_total}</td>
+</tr>"""
+
+    legend = (
+        f'<div style="display:flex;justify-content:flex-end;align-items:center;'
+        f'gap:4px;margin-top:10px;font-size:9px;color:#8a8a8a">'
+        f'Less &nbsp;'
+        + "".join(f'<span style="display:inline-block;width:14px;height:14px;background:{c};'
+                  f'border-radius:3px;vertical-align:middle"></span>'
+                  for c in ["#f0f2f5"] + _SCALE)
+        + '&nbsp; More</div>'
+    )
+
+    return f"""<tr><td style="padding:0;border-left:1px solid #dde1e7;border-right:1px solid #dde1e7;background:#ffffff">
+  <div style="padding:0 24px 4px">
+    <button onclick="var h=document.getElementById('{heatmap_id}');var a=document.getElementById('{heatmap_id}-arrow');if(h.style.display==='none'){{h.style.display='block';a.textContent='▼'}}else{{h.style.display='none';a.textContent='▶'}};return false"
+            style="background:#f0f4fa;border:1px solid #dde1e7;border-radius:6px;padding:8px 14px;
+                   cursor:pointer;font-size:12px;color:#2d6a9f;font-weight:600;width:100%;text-align:left;
+                   display:flex;align-items:center;gap:8px">
+      <span id="{heatmap_id}-arrow">▶</span>
+      See daily breakdown
+      <span style="font-weight:400;color:#8a8a8a;font-size:11px">— message counts by time of day</span>
+    </button>
+    <div id="{heatmap_id}" style="display:none;margin-top:12px;overflow-x:auto">
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;min-width:500px">
+        <thead><tr>
+          <th style="width:70px"></th>{col_headers}<th style="width:30px"></th>
+        </tr></thead>
+        <tbody>{rows_html}</tbody>
+      </table>
+      {legend}
+    </div>
+  </div>
+</td></tr>"""
+
+
 # ── Individual source tab ─────────────────────────────────────────────────────
 
 def _source_view(view_id: str, data: dict | None, source: str,
                  tool_name: str,
                  n_days: int, active_days: int,
-                 date_range_str: str) -> str:
+                 date_range_str: str,
+                 analyses: list | None = None) -> str:
     accent     = ACCENT[source]
     banner_bg  = BANNER_BG[source]
     accent_bg  = ACCENT_BG[source]
@@ -1493,6 +1589,18 @@ def _source_view(view_id: str, data: dict | None, source: str,
     numbers   = _numbers_section(data, source, n_days)
     evidence  = _evidence_section(data, accent, vid=view_id)
 
+    # Per-source daily heatmap
+    _PERIODS_KEYS = ["Early Morning", "Morning", "Afternoon", "Evening", "Night"]
+    heatmap_day_rows = []
+    if analyses:
+        for a in sorted(analyses, key=lambda x: x["date"]):
+            src_data = a.get(source) or {}
+            tb = src_data.get("time_buckets") or {}
+            if sum(tb.get(p, 0) for p in _PERIODS_KEYS) == 0:
+                continue
+            heatmap_day_rows.append((a["date"], {p: tb.get(p, 0) for p in _PERIODS_KEYS}))
+    heatmap = _heatmap_row(heatmap_day_rows, f"{view_id}-heatmap")
+
     footer = f"""<tr>
   <td style="background:#ffffff;padding:12px 24px;
              border:1px solid #dde1e7;border-radius:0 0 9px 9px;
@@ -1518,6 +1626,7 @@ def _source_view(view_id: str, data: dict | None, source: str,
 {skills}
 {collab}
 {timing}
+{heatmap}
 {numbers}
 {evidence}
 {footer}
@@ -1857,123 +1966,18 @@ def _all_view(copilot_agg: dict | None, claude_agg: dict | None,
 </td></tr>"""
 
     # ── Daily heatmap ─────────────────────────────────────────────────────────
-    heatmap_row = ""
+    _PERIODS_KEYS = ["Early Morning", "Morning", "Afternoon", "Evening", "Night"]
+    all_day_rows = []
     if analyses:
-        _PERIODS = [
-            ("Early Morning", "5–9am"),
-            ("Morning",       "9am–12pm"),
-            ("Afternoon",     "12–5pm"),
-            ("Evening",       "5–9pm"),
-            ("Night",         "9pm–1am"),
-        ]
-
-        # Build per-day combined bucket counts
-        day_rows = []
         for a in sorted(analyses, key=lambda x: x["date"]):
-            date_str = a["date"]          # YYYY-MM-DD
             buckets = {}
             for src in ("copilot", "claude"):
-                src_data = a.get(src) or {}
-                tb = src_data.get("time_buckets") or {}
-                for period, _ in _PERIODS:
-                    buckets[period] = buckets.get(period, 0) + tb.get(period, 0)
-            if sum(buckets.values()) == 0:
-                continue
-            day_rows.append((date_str, buckets))
-
-        if day_rows:
-            # Colour scale: 5 intensity steps based on max cell count
-            all_vals = [v for _, b in day_rows for v in b.values() if v > 0]
-            max_val  = max(all_vals) if all_vals else 1
-            _SCALE   = ["#dde8f5", "#a8c4e0", "#5a90c8", "#2660a4", "#0d3a6e"]
-
-            def _cell_color(n):
-                if n == 0: return "#f0f2f5"
-                frac = n / max_val
-                idx  = min(int(frac * len(_SCALE)), len(_SCALE) - 1)
-                return _SCALE[idx]
-
-            def _text_color(n):
-                frac = n / max_val if max_val else 0
-                return "#ffffff" if frac >= 0.5 else "#2d4a6e"
-
-            # Column headers
-            col_headers = "".join(
-                f'<th style="padding:6px 4px;text-align:center;font-size:9px;font-weight:700;'
-                f'color:#6a737d;text-transform:uppercase;letter-spacing:0.5px;width:18%">'
-                f'{name}<br><span style="font-weight:400;font-size:8px">{sub}</span></th>'
-                for name, sub in _PERIODS
-            )
-
-            # Data rows
-            import calendar as _cal
-            rows_html = ""
-            for date_str, buckets in day_rows:
-                try:
-                    dt   = datetime.strptime(date_str, "%Y-%m-%d")
-                    mon  = dt.strftime("%b")
-                    day  = dt.strftime("%d")
-                    dow  = dt.strftime("%a")
-                    lbl  = f'<span style="font-size:11px;font-weight:700">{mon} {day}</span><br><span style="font-size:9px;color:#8a8a8a">{dow}</span>'
-                except Exception:
-                    lbl = date_str
-
-                row_total = sum(buckets.values())
-                cells = ""
-                for period, _ in _PERIODS:
-                    n     = buckets.get(period, 0)
-                    bg    = _cell_color(n)
-                    tc    = _text_color(n)
-                    label = f'<span style="font-size:11px;font-weight:700;color:{tc}">{n}</span>' if n > 0 else ""
-                    cells += (
-                        f'<td style="padding:3px 4px">'
-                        f'<div style="background:{bg};border-radius:6px;height:36px;'
-                        f'display:flex;align-items:center;justify-content:center">'
-                        f'{label}</div></td>'
-                    )
-
-                rows_html += f"""<tr>
-  <td style="padding:3px 8px 3px 0;white-space:nowrap;text-align:right">{lbl}</td>
-  {cells}
-  <td style="padding:3px 0 3px 8px;font-size:10px;color:#6a737d;white-space:nowrap">{row_total}</td>
-</tr>"""
-
-            # Legend
-            legend_cells = "".join(
-                f'<span style="display:inline-block;width:14px;height:14px;background:{c};'
-                f'border-radius:3px;vertical-align:middle"></span>'
-                for c in ["#f0f2f5"] + _SCALE
-            )
-            legend_html = (
-                f'<div style="display:flex;justify-content:flex-end;align-items:center;'
-                f'gap:4px;margin-top:10px;font-size:9px;color:#8a8a8a">'
-                f'Less &nbsp;{legend_cells}&nbsp; More</div>'
-            )
-
-            heatmap_id = "all-heatmap"
-            heatmap_row = f"""<tr><td style="padding:0;border-left:1px solid #dde1e7;border-right:1px solid #dde1e7;background:#ffffff">
-  <div style="padding:0 24px 4px">
-    <button onclick="var h=document.getElementById('{heatmap_id}');var a=document.getElementById('{heatmap_id}-arrow');if(h.style.display==='none'){{h.style.display='block';a.textContent='▼'}}else{{h.style.display='none';a.textContent='▶'}};return false"
-            style="background:#f0f4fa;border:1px solid #dde1e7;border-radius:6px;padding:8px 14px;
-                   cursor:pointer;font-size:12px;color:#2d6a9f;font-weight:600;width:100%;text-align:left;
-                   display:flex;align-items:center;gap:8px">
-      <span id="{heatmap_id}-arrow">▶</span>
-      See daily breakdown
-      <span style="font-weight:400;color:#8a8a8a;font-size:11px">— message counts by time of day</span>
-    </button>
-    <div id="{heatmap_id}" style="display:none;margin-top:12px;overflow-x:auto">
-      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;min-width:500px">
-        <thead><tr>
-          <th style="width:70px"></th>
-          {col_headers}
-          <th style="width:30px"></th>
-        </tr></thead>
-        <tbody>{rows_html}</tbody>
-      </table>
-      {legend_html}
-    </div>
-  </div>
-</td></tr>"""
+                tb = (a.get(src) or {}).get("time_buckets") or {}
+                for p in _PERIODS_KEYS:
+                    buckets[p] = buckets.get(p, 0) + tb.get(p, 0)
+            if sum(buckets.values()) > 0:
+                all_day_rows.append((a["date"], buckets))
+    heatmap_row = _heatmap_row(all_day_rows, "all-heatmap")
 
     footer = f"""<tr>
   <td style="background:#ffffff;padding:12px 24px;
@@ -2044,10 +2048,10 @@ def generate_report(
                              include_copilot, include_claude, analyses) if show_all else ""
     copilot_view = _source_view("copilot", copilot_agg, "copilot",
                                 "GitHub Copilot",
-                                n_days, c_days, date_range_str) if include_copilot else ""
+                                n_days, c_days, date_range_str, analyses) if include_copilot else ""
     claude_view  = _source_view("claude",  claude_agg,  "claude",
                                 "Claude Code",
-                                n_days, cl_days, date_range_str) if include_claude else ""
+                                n_days, cl_days, date_range_str, analyses) if include_claude else ""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
