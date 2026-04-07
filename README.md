@@ -34,19 +34,21 @@ The report has three tabs: **GitHub Copilot**, **Claude Code**, and an **All** t
 - Python 3.10+
 - Active GitHub Copilot sessions at `~/.copilot/session-state/`
 - Claude Code sessions at `~/.claude/projects/`
-- An Anthropic API key (for AI analysis of sessions)
+- One of: **Claude Code** CLI, **GitHub CLI** (`gh`), or an Anthropic API key — used for AI analysis (see [Backend detection](#backend-detection))
 
 **Install**
 
 ```bash
 git clone https://github.com/shailendrahegde/What-I-Did-AI.git
 cd What-I-Did-AI
-pip install anthropic          # only external dependency
 ```
 
-**Set your API key**
+Run the subsequent steps inside **Claude Code** or **GitHub Copilot** — no extra packages needed. The tool auto-detects which AI backend is available (see below).
+
+If you prefer to call the Anthropic API directly:
 
 ```bash
+pip install anthropic
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
@@ -101,11 +103,26 @@ Speed multiplier = human-equivalent hours ÷ active engagement hours.
 **Your data stays on your machine.**
 
 - Reads only existing local session logs — no agents, no scrapers
-- AI analysis uses your own Anthropic API key sent directly to Anthropic
+- AI analysis uses your own credentials (Anthropic API key, Claude Code CLI, or GitHub token) sent directly to the respective provider
 - The generated report is a local HTML file
 - No telemetry, no tracking, no cloud uploads
 
 The only network call is the Anthropic API request for session analysis, using credentials you supply.
+
+---
+
+## Backend detection
+
+The tool tries AI backends in this order and uses the first one available:
+
+| Priority | Backend | How it's detected |
+|----------|---------|-------------------|
+| 1 | **Anthropic API** (direct) | `ANTHROPIC_API_KEY` env var set |
+| 2 | **Claude Code CLI** | `claude` binary on PATH |
+| 3 | **GitHub Models** | `gh auth token` succeeds |
+| 4 | Heuristic fallback | Always available — no AI, rule-based only |
+
+Running inside Claude Code or GitHub Copilot satisfies options 2 or 3 automatically, so no extra setup is needed.
 
 ---
 

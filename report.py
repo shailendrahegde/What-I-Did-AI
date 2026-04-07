@@ -21,20 +21,22 @@ TOKEN_PRICE_CACHE_RD = 0.30
 TOKEN_PRICE_CACHE_CR = 3.75
 
 # Accent colors per source
+# Copilot: official GitHub Copilot purple (brand.github.com)
+# Claude:  claude.ai orange
 ACCENT = {
-    "copilot":  "#0078d4",
-    "claude":   "#7B2FBE",
-    "combined": "#0078d4",
+    "copilot":  "#8534F3",
+    "claude":   "#DE7356",
+    "combined": "#8534F3",
 }
 ACCENT_BG = {
-    "copilot":  "#e8f2fb",
-    "claude":   "#f3eafa",
-    "combined": "#e8f2fb",
+    "copilot":  "#f0e8ff",
+    "claude":   "#fdf1ee",
+    "combined": "#f0e8ff",
 }
 ROI_BG = {
-    "copilot":  "linear-gradient(135deg,#1a7f37,#15803d)",
-    "claude":   "linear-gradient(135deg,#5a1a9f,#7B2FBE)",
-    "combined": "linear-gradient(135deg,#1a7f37,#15803d)",
+    "copilot":  "linear-gradient(135deg,#6a1fcf,#8534F3)",
+    "claude":   "linear-gradient(135deg,#c45a3a,#DE7356)",
+    "combined": "linear-gradient(135deg,#6a1fcf,#8534F3)",
 }
 
 INTENT_COLORS = {
@@ -1387,7 +1389,7 @@ def _evidence_section(data: dict, accent: str, vid: str = "") -> str:
 # ── Individual source tab ─────────────────────────────────────────────────────
 
 def _source_view(view_id: str, data: dict | None, source: str,
-                 tool_name: str, tool_icon: str,
+                 tool_name: str,
                  n_days: int, active_days: int,
                  date_range_str: str) -> str:
     accent = ACCENT[source]
@@ -1417,7 +1419,7 @@ def _source_view(view_id: str, data: dict | None, source: str,
       {_e(date_range_str)} &nbsp;·&nbsp; {_e(tool_name)} Impact Report
     </div>
     <div style="font-size:20px;font-weight:700;color:#fff;line-height:1.3">
-      {tool_icon}&nbsp;{_e(active_days)} active day{"s" if active_days!=1 else ""}
+      {_e(active_days)} active day{"s" if active_days!=1 else ""}
       ({_e(date_range_str[:5] if len(date_range_str)>10 else date_range_str)}):
       {_e(projects)} project{"s" if projects!=1 else ""} delivered
     </div>
@@ -1804,45 +1806,27 @@ def generate_report(
     show_all = include_copilot and include_claude
     default_tab = "all" if show_all else ("copilot" if include_copilot else "claude")
 
-    # Logos — Copilot (official two-path SVG: helmet body + visor eyes) and Claude (Anthropic "A")
-    copilot_svg_sm = (
-        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" style="vertical-align:middle;flex-shrink:0">'
-        '<path fill="currentColor" d="M23.922 16.992c-.861 1.495-5.859 5.023-11.922 5.023-6.063 0-11.061-3.528-11.922-5.023A.641.641 0 0 1 0 16.736v-2.869a.841.841 0 0 1 .053-.22c.372-.935 1.347-2.292 2.605-2.656.167-.429.414-1.055.644-1.517a10.195 10.195 0 0 1-.052-1.086c0-1.331.282-2.499 1.132-3.368.397-.406.89-.717 1.474-.952C7.333 2.952 9.326 2 12.056 2c2.731 0 4.767.952 6.166 2.088.584.235 1.077.546 1.474.952.85.869 1.132 2.037 1.132 3.368 0 .368-.014.733-.052 1.086.23.462.477 1.088.644 1.517 1.258.364 2.233 1.721 2.605 2.656.034.069.053.143.053.22v2.869a.641.641 0 0 1-.078.256z"/>'
-        '<path fill="currentColor" d="M14.5 14.25a1 1 0 0 1 1 1v2a1 1 0 0 1-2 0v-2a1 1 0 0 1 1-1Zm-5 0a1 1 0 0 1 1 1v2a1 1 0 0 1-2 0v-2a1 1 0 0 1 1-1Z"/>'
-        '</svg>'
-    )
-    # Anthropic / Claude logo — official starburst (11 rounded rays)
-    _cl_rays = "".join(
-        f'<rect x="-5.5" y="-44" width="11" height="30" rx="4.5" transform="rotate({round(i*360/11,1)})"/>'
-        for i in range(11)
-    )
-    claude_svg_sm = (
-        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100" style="vertical-align:middle;flex-shrink:0">'
-        f'<g fill="currentColor" transform="translate(50,50)">{_cl_rays}</g>'
-        '</svg>'
-    )
-
     tab_buttons = ""
     if show_all:
         tab_buttons += f'<button class="tab-btn" id="tab-all" onclick="showTab(\'all\')">All</button>'
     if include_copilot:
         tab_buttons += (
-            f'<button class="tab-btn" id="tab-copilot" onclick="showTab(\'copilot\')" style="color:#0078d4">'
-            f'{copilot_svg_sm} GitHub Copilot <span class="tab-hours">· {_fmt_h(c_hours)}</span></button>'
+            f'<button class="tab-btn" id="tab-copilot" onclick="showTab(\'copilot\')" style="color:#8534F3">'
+            f'GitHub Copilot <span class="tab-hours">· {_fmt_h(c_hours)}</span></button>'
         )
     if include_claude:
         tab_buttons += (
-            f'<button class="tab-btn" id="tab-claude" onclick="showTab(\'claude\')" style="color:#7B2FBE">'
-            f'{claude_svg_sm} Claude <span class="tab-hours">· {_fmt_h(cl_hours)}</span></button>'
+            f'<button class="tab-btn" id="tab-claude" onclick="showTab(\'claude\')" style="color:#DE7356">'
+            f'Claude <span class="tab-hours">· {_fmt_h(cl_hours)}</span></button>'
         )
 
     all_view     = _all_view(copilot_agg, claude_agg, n_days, date_range_str,
                              include_copilot, include_claude) if show_all else ""
     copilot_view = _source_view("copilot", copilot_agg, "copilot",
-                                "GitHub Copilot", copilot_svg_sm,
+                                "GitHub Copilot",
                                 n_days, c_days, date_range_str) if include_copilot else ""
     claude_view  = _source_view("claude",  claude_agg,  "claude",
-                                "Claude Code", claude_svg_sm,
+                                "Claude Code",
                                 n_days, cl_days, date_range_str) if include_claude else ""
 
     return f"""<!DOCTYPE html>
@@ -1902,7 +1886,10 @@ body {{ margin:0;padding:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe 
   display:flex; align-items:center; gap:6px; white-space:nowrap;
 }}
 .tab-btn:hover {{ color:#24292f; background:#f6f8fa; }}
-.tab-btn.active {{ color:#0969da; border-bottom-color:#0969da; font-weight:600; }}
+.tab-btn.active {{ font-weight:600; }}
+#tab-all.active {{ color:#24292f; border-bottom-color:#24292f; }}
+#tab-copilot.active {{ color:#8534F3; border-bottom-color:#8534F3; }}
+#tab-claude.active {{ color:#DE7356; border-bottom-color:#DE7356; }}
 .tab-hours {{ font-size:11px; font-weight:400; opacity:0.7; }}
 .view {{ display:none; }}
 </style>
