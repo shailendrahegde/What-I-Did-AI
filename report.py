@@ -251,6 +251,7 @@ def _agg(analyses: list, key: str) -> dict | None:
     # Aggregate intent / time / quality modes
     intent_counts    = _sum_dict("intent_counts")
     time_buckets     = _sum_dict("time_buckets")
+    time_buckets_all = _sum_dict("time_buckets_all")
     file_type_counts = _sum_dict("file_type_counts")
     quality_modes    = _sum_dict("quality_modes")
 
@@ -275,20 +276,21 @@ def _agg(analyses: list, key: str) -> dict | None:
         "active_days":     active_days,
         "total_files":     total_files,
         "active_minutes":  active_minutes,
-        "intent_counts":   intent_counts,
-        "time_buckets":    time_buckets,
-        "file_type_counts":file_type_counts,
-        "quality_modes":   quality_modes,
+        "intent_counts":    intent_counts,
+        "time_buckets":     time_buckets,
+        "time_buckets_all": time_buckets_all,
+        "file_type_counts": file_type_counts,
+        "quality_modes":    quality_modes,
     }
 
 
 # ── Section builders ──────────────────────────────────────────────────────────
 
-def _section_header(title: str, subtitle: str = "") -> str:
+def _section_header(title: str, subtitle: str = "", extra: str = "") -> str:
     sub = f'<div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:2px">{_e(subtitle)}</div>' if subtitle else ""
     return f"""<table width="100%" cellpadding="0" cellspacing="0"><tbody><tr>
 <td style="background:linear-gradient(135deg,#24292f,#1b1f23);padding:10px 24px">
-  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;
+  {extra}<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;
               color:rgba(255,255,255,0.7)">{_e(title)}</div>{sub}
 </td></tr></tbody></table>"""
 
@@ -834,8 +836,10 @@ def _collab_section(data: dict, source: str, tool_name: str) -> str:
 
 
 def _timing_section(data: dict, source: str, tool_name: str,
-                    copilot_buckets:       dict | None = None,
-                    claude_buckets:        dict | None = None,
+                    copilot_buckets:        dict | None = None,
+                    claude_buckets:         dict | None = None,
+                    copilot_buckets_all:    dict | None = None,
+                    claude_buckets_all:     dict | None = None,
                     copilot_active_minutes: float = 0,
                     claude_active_minutes:  float = 0) -> str:
     buckets = data.get("time_buckets", {})
@@ -843,18 +847,30 @@ def _timing_section(data: dict, source: str, tool_name: str,
         return ""
 
     split = copilot_buckets is not None and claude_buckets is not None
-    max_v = max(buckets.values()) or 1
+    has_all = split and copilot_buckets_all is not None and claude_buckets_all is not None
 
-    rows = ""
-    for bucket, total in buckets.items():
+    # Unique DOM id so multiple sections on the same page don't collide
+    import hashlib as _hl
+    _uid = _hl.md5((source + tool_name).encode()).hexdigest()[:6]
+
+    def _make_rows(cop_b, cla_b, single_b, include_all_label=False):
+        """Render table rows for one dataset (split or single-source)."""
         if split:
-            cop_n = copilot_buckets.get(bucket, 0)
-            cla_n = claude_buckets.get(bucket, 0)
-            cop_w = int(cop_n / max_v * 100)
-            cla_w = int(cla_n / max_v * 100)
-            cop_label = f'<span style="font-size:10px;font-weight:600;color:#fff;padding:0 4px;white-space:nowrap">{cop_n}</span>' if cop_w >= 8 else ""
-            cla_label = f'<span style="font-size:10px;font-weight:600;color:#fff;padding:0 4px;white-space:nowrap">{cla_n}</span>' if cla_w >= 8 else ""
-            rows += f"""<tr>
+            combined = {k: cop_b.get(k, 0) + cla_b.get(k, 0) for k in buckets}
+        else:
+            combined = single_b
+        max_v = max(combined.values()) or 1
+        rows = ""
+        for bucket in buckets:
+            total = combined.get(bucket, 0)
+            if split:
+                cop_n = cop_b.get(bucket, 0)
+                cla_n = cla_b.get(bucket, 0)
+                cop_w = int(cop_n / max_v * 100)
+                cla_w = int(cla_n / max_v * 100)
+                cop_label = f'<span style="font-size:10px;font-weight:600;color:#fff;padding:0 4px;white-space:nowrap">{cop_n}</span>' if cop_w >= 8 else ""
+                cla_label = f'<span style="font-size:10px;font-weight:600;color:#fff;padding:0 4px;white-space:nowrap">{cla_n}</span>' if cla_w >= 8 else ""
+                rows += f"""<tr>
   <td style="padding:4px 12px 4px 0;font-size:11px;color:#6a737d;white-space:nowrap;width:160px">{_e(bucket)}</td>
   <td style="padding:4px 0;width:auto">
     <div style="background:#f0f0f5;border-radius:4px;height:20px;width:100%;display:flex;overflow:hidden;align-items:center">
@@ -864,10 +880,10 @@ def _timing_section(data: dict, source: str, tool_name: str,
   </td>
   <td style="padding:4px 0 4px 0;width:0"></td>
 </tr>"""
-        else:
-            accent = ACCENT[source]
-            w = int(total / max_v * 100)
-            rows += f"""<tr>
+            else:
+                accent = ACCENT[source]
+                w = int(total / max_v * 100)
+                rows += f"""<tr>
   <td style="padding:3px 12px 3px 0;font-size:11px;color:#6a737d;white-space:nowrap;width:160px">{_e(bucket)}</td>
   <td style="padding:3px 0;width:auto">
     <div style="background:#e8f2fb;border-radius:4px;height:16px;width:100%">
@@ -878,21 +894,21 @@ def _timing_section(data: dict, source: str, tool_name: str,
     {total} msg{"s" if total!=1 else ""}
   </td>
 </tr>"""
+        return rows
+
+    rows_filtered = _make_rows(copilot_buckets, claude_buckets, buckets)
+    rows_all      = _make_rows(copilot_buckets_all, claude_buckets_all,
+                               data.get("time_buckets_all", buckets)) if has_all else ""
 
     legend = ""
-    kpi_strip = ""
+    kpi_filtered = ""
+    kpi_all = ""
+
     if split:
         legend = """<div style="display:flex;gap:16px;margin-bottom:10px;font-size:11px;color:#6a737d">
   <span><span style="display:inline-block;width:10px;height:10px;background:#0078d4;border-radius:2px;margin-right:4px"></span>GitHub Copilot</span>
   <span><span style="display:inline-block;width:10px;height:10px;background:#7B2FBE;border-radius:2px;margin-right:4px"></span>Claude</span>
 </div>"""
-
-        cop_total = sum(copilot_buckets.values())
-        cla_total = sum(claude_buckets.values())
-        cop_h     = copilot_active_minutes / 60 if copilot_active_minutes else 0
-        cla_h     = claude_active_minutes  / 60 if claude_active_minutes  else 0
-        cop_rate  = str(round(cop_total/cop_h)) if cop_h > 0 else "—"
-        cla_rate  = str(round(cla_total/cla_h)) if cla_h > 0 else "—"
 
         def _kpi_chip(label, value, color):
             return f"""<div style="background:#f6f8fa;border:1px solid #e1e4e8;border-radius:6px;
@@ -901,17 +917,58 @@ def _timing_section(data: dict, source: str, tool_name: str,
   <div style="font-size:16px;font-weight:700;color:{color}">{value}<span style="font-size:10px;font-weight:400;color:#6a737d;margin-left:3px">msgs/active hr</span></div>
 </div>"""
 
-        kpi_strip = f"""<div style="margin-bottom:14px;display:flex;flex-wrap:wrap;gap:4px">
-  {_kpi_chip("GitHub Copilot engagement", cop_rate, "#0078d4")}
-  {_kpi_chip("Claude engagement", cla_rate, "#7B2FBE")}
+        cop_h = copilot_active_minutes / 60 if copilot_active_minutes else 0
+        cla_h = claude_active_minutes  / 60 if claude_active_minutes  else 0
+
+        cop_f = sum(copilot_buckets.values())
+        cla_f = sum(claude_buckets.values())
+        kpi_filtered = f"""<div style="margin-bottom:14px;display:flex;flex-wrap:wrap;gap:4px">
+  {_kpi_chip("GitHub Copilot engagement", str(round(cop_f/cop_h)) if cop_h else "—", "#0078d4")}
+  {_kpi_chip("Claude engagement", str(round(cla_f/cla_h)) if cla_h else "—", "#7B2FBE")}
 </div>"""
 
-    subtitle = (f"Non-trivial prompts by time of day — approvals, single-key responses, "
-                f"and idle time excluded")
-    inner = f"""{_section_header("When I Worked", subtitle)}
+        if has_all:
+            cop_a = sum(copilot_buckets_all.values())
+            cla_a = sum(claude_buckets_all.values())
+            kpi_all = f"""<div style="margin-bottom:14px;display:flex;flex-wrap:wrap;gap:4px">
+  {_kpi_chip("GitHub Copilot engagement", str(round(cop_a/cop_h)) if cop_h else "—", "#0078d4")}
+  {_kpi_chip("Claude engagement", str(round(cla_a/cla_h)) if cla_h else "—", "#7B2FBE")}
+</div>"""
+
+    # Toggle button (only shown when we have the "all" dataset)
+    toggle_html = ""
+    if has_all:
+        toggle_html = f"""
+<div style="float:right;margin-top:-2px">
+  <button id="tog-{_uid}"
+    onclick="(function(){{
+      var f=document.getElementById('rows-f-{_uid}');
+      var a=document.getElementById('rows-a-{_uid}');
+      var kf=document.getElementById('kpi-f-{_uid}');
+      var ka=document.getElementById('kpi-a-{_uid}');
+      var b=document.getElementById('tog-{_uid}');
+      var showAll=f.style.display!=='none';
+      f.style.display=showAll?'none':'';
+      a.style.display=showAll?'':'none';
+      kf.style.display=showAll?'none':'';
+      ka.style.display=showAll?'':'none';
+      b.textContent=showAll?'Exclude trivial':'Include trivial';
+    }})()"
+    style="font-size:10px;padding:3px 10px;border:1px solid #d0d7de;border-radius:4px;
+           background:#f6f8fa;color:#57606a;cursor:pointer;white-space:nowrap">
+    Include trivial
+  </button>
+</div>"""
+
+    subtitle = "Non-trivial prompts by time of day — approvals, single-key responses, and idle time excluded"
+    inner = f"""{_section_header("When I Worked", subtitle, extra=toggle_html)}
 <div style="padding:14px 24px 18px">
-  {kpi_strip}{legend}<table width="100%" cellpadding="0" cellspacing="0">
-    <tbody>{rows}</tbody>
+  <div id="kpi-f-{_uid}">{kpi_filtered}</div>
+  <div id="kpi-a-{_uid}" style="display:none">{kpi_all}</div>
+  {legend}
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tbody id="rows-f-{_uid}">{rows_filtered}</tbody>
+    <tbody id="rows-a-{_uid}" style="display:none">{rows_all}</tbody>
   </table>
 </div>"""
     return _wrap_section(inner)
@@ -1539,11 +1596,12 @@ def _all_view(copilot_agg: dict | None, claude_agg: dict | None,
         return merged
 
     combined_data = {
-        "goals":          combined_goals,
-        "quality_modes":  _sum_dicts(copilot_agg, claude_agg, field="quality_modes"),
-        "time_buckets":   _sum_dicts(copilot_agg, claude_agg, field="time_buckets"),
-        "active_minutes": ((copilot_agg or {}).get("active_minutes", 0)
-                         + (claude_agg  or {}).get("active_minutes", 0)),
+        "goals":            combined_goals,
+        "quality_modes":    _sum_dicts(copilot_agg, claude_agg, field="quality_modes"),
+        "time_buckets":     _sum_dicts(copilot_agg, claude_agg, field="time_buckets"),
+        "time_buckets_all": _sum_dicts(copilot_agg, claude_agg, field="time_buckets_all"),
+        "active_minutes":   ((copilot_agg or {}).get("active_minutes", 0)
+                           + (claude_agg  or {}).get("active_minutes", 0)),
     }
 
     skills_row = _skills_section(combined_goals, "#0078d4")
@@ -1552,6 +1610,8 @@ def _all_view(copilot_agg: dict | None, claude_agg: dict | None,
         combined_data, "copilot", "AI tools",
         copilot_buckets=(copilot_agg or {}).get("time_buckets", {}),
         claude_buckets=(claude_agg   or {}).get("time_buckets", {}),
+        copilot_buckets_all=(copilot_agg or {}).get("time_buckets_all", {}),
+        claude_buckets_all=(claude_agg   or {}).get("time_buckets_all", {}),
         copilot_active_minutes=(copilot_agg or {}).get("active_minutes", 0),
         claude_active_minutes=(claude_agg   or {}).get("active_minutes", 0),
     )

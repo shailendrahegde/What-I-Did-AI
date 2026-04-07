@@ -408,8 +408,9 @@ def _compute_extra_metrics(sessions: list) -> dict:
     except Exception:
         local_offset = timedelta(0)
 
-    hourly: dict[int, int] = {h: 0 for h in range(24)}
-    intent_counts: dict[str, int] = {}
+    hourly:         dict[int, int] = {h: 0 for h in range(24)}
+    hourly_trivial: dict[int, int] = {h: 0 for h in range(24)}
+    intent_counts:  dict[str, int] = {}
 
     for s in sessions:
         for m in s.get("messages", []):
@@ -425,13 +426,28 @@ def _compute_extra_metrics(sessions: list) -> dict:
                     pass
             intent = m.get("intent", "Building")
             intent_counts[intent] = intent_counts.get(intent, 0) + 1
+        # Count trivial/approval messages per hour separately
+        for ts in s.get("trivial_timestamps", []):
+            try:
+                dt_utc  = datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S")
+                local_h = (dt_utc + local_offset).hour
+                hourly_trivial[local_h] = hourly_trivial.get(local_h, 0) + 1
+            except Exception:
+                pass
 
-    time_buckets = {
-        "Early Morning (5\u20139am)": sum(hourly[h] for h in range(5, 9)),
-        "Morning (9am\u201312pm)":    sum(hourly[h] for h in range(9, 12)),
-        "Afternoon (12\u20135pm)":    sum(hourly[h] for h in range(12, 17)),
-        "Evening (5\u20139pm)":       sum(hourly[h] for h in range(17, 21)),
-        "Night (9pm\u20131am)":       sum(hourly[h] for h in range(21, 24)) + hourly.get(0, 0),
+    def _bucket(h_map):
+        return {
+            "Early Morning (5\u20139am)": sum(h_map[h] for h in range(5, 9)),
+            "Morning (9am\u201312pm)":    sum(h_map[h] for h in range(9, 12)),
+            "Afternoon (12\u20135pm)":    sum(h_map[h] for h in range(12, 17)),
+            "Evening (5\u20139pm)":       sum(h_map[h] for h in range(17, 21)),
+            "Night (9pm\u20131am)":       sum(h_map[h] for h in range(21, 24)) + h_map.get(0, 0),
+        }
+
+    time_buckets = _bucket(hourly)
+    time_buckets_all = {
+        k: time_buckets[k] + _bucket(hourly_trivial)[k]
+        for k in time_buckets
     }
 
     # File type classification
@@ -461,6 +477,7 @@ def _compute_extra_metrics(sessions: list) -> dict:
     return {
         "hourly_counts":    hourly,
         "time_buckets":     time_buckets,
+        "time_buckets_all": time_buckets_all,
         "file_type_counts": file_types,
         "intent_counts":    intent_counts,
         "total_files":      len(all_files),
@@ -586,6 +603,7 @@ def analyze_day(
         result["sessions_count"]   = len(sessions)
         result["projects"]         = list(session_metrics.keys())
         result["time_buckets"]     = extra["time_buckets"]
+        result["time_buckets_all"] = extra["time_buckets_all"]
         result["intent_counts"]    = extra["intent_counts"]
         result["file_type_counts"] = extra["file_type_counts"]
         result["total_files"]      = extra["total_files"]

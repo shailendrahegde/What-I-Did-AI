@@ -135,7 +135,8 @@ def get_sessions_for_date(target_date: str) -> list:
         project_name = Path(cwd).name if cwd else session_dir.name[:12]
 
         # Extract user messages and tool summaries
-        messages      = []
+        messages           = []
+        trivial_timestamps = []   # timestamps of approval/trivial messages
         session_start = None
         session_end   = None
         git_ops_list  = []
@@ -164,6 +165,8 @@ def get_sessions_for_date(target_date: str) -> list:
                             "tools_after": [],
                             "intent":      _classify_intent(text),
                         })
+                    elif text:
+                        trivial_timestamps.append(ts)
 
             elif etype == "assistant.message":
                 tool_requests = e.get("data", {}).get("toolRequests", [])
@@ -256,8 +259,9 @@ def get_sessions_for_date(target_date: str) -> list:
             "lines_added":       lines_added,
             "lines_removed":     lines_removed,
             "workspace_summary": workspace.get("summary", ""),
-            "tool_invocations":  sum(len(m.get("tools_after", [])) for m in messages if m["role"] == "user"),
-            "files_touched":     sorted(all_modified),
+            "tool_invocations":   sum(len(m.get("tools_after", [])) for m in messages if m["role"] == "user"),
+            "files_touched":      sorted(all_modified),
+            "trivial_timestamps": trivial_timestamps,
         })
 
     return sessions

@@ -273,7 +273,8 @@ def _parse_session_file(jsonl_path: Path, target_date: str, project_name: str, s
             break
 
     # Process records chronologically
-    messages      = []
+    messages            = []
+    trivial_timestamps  = []   # timestamps of approval/trivial messages (not in messages[])
     tokens        = {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}
     git_ops       = []
     git_repos     = []
@@ -304,6 +305,7 @@ def _parse_session_file(jsonl_path: Path, target_date: str, project_name: str, s
             # Skip pure approvals and single-digit menu selections (e.g. "1", "2")
             cleaned = text.strip().rstrip(".!").lower()
             if len(cleaned.split()) <= 8 and (cleaned in _APPROVALS or _re.fullmatch(r'\d{1,2}', cleaned)):
+                trivial_timestamps.append(ts)
                 continue
 
             if not session_start:
@@ -412,8 +414,9 @@ def _parse_session_file(jsonl_path: Path, target_date: str, project_name: str, s
         "lines_added":    lines_added,
         "lines_removed":  0,
         "files_touched":  sorted(files_touched),
-        "tool_invocations": sum(len(m.get("tools_after", [])) for m in messages if m["role"] == "user"),
-        "git_branch":     git_branch,
+        "tool_invocations":    sum(len(m.get("tools_after", [])) for m in messages if m["role"] == "user"),
+        "trivial_timestamps":  trivial_timestamps,
+        "git_branch":          git_branch,
     }
 
 
