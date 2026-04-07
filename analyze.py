@@ -335,10 +335,10 @@ def compute_active_time_quality(sessions: list) -> dict:
 
     Two detection layers:
     1. Hand-holding: user correcting AI OR error signals in tool output
-    2. Mode: intent classification (first matching mode wins, Refinement before Builder)
+    2. Mode: intent classification (first matching mode wins, Refinement before Building)
     """
     modes: dict = {name: 0.0 for name, _, _ in _QUALITY_MODES}
-    modes["Needed hand-holding"] = 0.0
+    modes["Course-correcting"] = 0.0
 
     for s in sessions:
         user_turns = []
@@ -382,10 +382,10 @@ def compute_active_time_quality(sessions: list) -> dict:
         for t in user_turns:
             mins = t["minutes"]
             if t["needs_handholding"]:
-                modes["Needed hand-holding"] += mins
+                modes["Course-correcting"] += mins
                 continue
             if t["is_grunt_override"] or t["is_trivial"]:
-                modes["Grunt work handled"] = modes.get("Grunt work handled", 0.0) + mins
+                modes["Delegating"] = modes.get("Delegating", 0.0) + mins
                 continue
             matched = False
             for mode_name, intent_set, _ in _QUALITY_MODES:
@@ -394,7 +394,7 @@ def compute_active_time_quality(sessions: list) -> dict:
                     matched = True
                     break
             if not matched:
-                modes["Builder"] = modes.get("Builder", 0.0) + mins
+                modes["Building"] = modes.get("Building", 0.0) + mins
 
     return {k: round(v, 1) for k, v in modes.items() if v > 0}
 

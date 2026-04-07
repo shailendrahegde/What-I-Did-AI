@@ -24,16 +24,16 @@
 # mode_name | intent_match | description
 # Priority order: Hand-holding → Grunt override → Trivial → Intent-based (first match wins).
 # Refinement FIRST over Building and Designing — iterating on existing output wins.
-Refinement partner  | Iterating                                  | Iterating, polishing, improving existing work
-Creative partner    | Designing,Planning                         | Net-new design decisions, direction changes
-Research assistant  | Researching,Investigating,Navigating       | Exploring options, investigating
-Builder             | Building                                   | Writing code, generating new features
-Grunt work handled  | Shipping,Configuring                       | Git ops, config, installs, docs, routine tasks
+Refining  | Iterating                                  | Iterating, polishing, improving existing work
+Designing    | Designing,Planning                         | Net-new design decisions, direction changes
+Researching  | Researching,Investigating,Navigating       | Exploring options, investigating
+Building             | Building                                   | Writing code, generating new features
+Delegating  | Shipping,Configuring                       | Git ops, config, installs, docs, routine tasks
 
 [mode_colors]
-Creative partner    | #7b1fa2
-Research assistant  | #1a7f37
-Builder             | #0078d4
-Refinement partner  | #0969da
-Needed hand-holding | #e65100
-Grunt work handled  | #6a737d
+Designing    | #7b1fa2
+Researching  | #1a7f37
+Building             | #0078d4
+Refining  | #0969da
+Course-correcting | #e65100
+Delegating  | #6a737d

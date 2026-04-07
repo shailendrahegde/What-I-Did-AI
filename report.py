@@ -53,17 +53,17 @@ INTENT_COLORS = {
 # ── Collaboration mode definitions ────────────────────────────────────────────
 # Each entry: (mode_name, icon, description, bar_color, is_high_value, [intents])
 _COLLAB_MODES = [
-    ("Builder",             "🏗",  "Writing code, generating files",         "#0078d4", True,
+    ("Building",             "🏗",  "Writing code, generating files",         "#0078d4", True,
      ["Building"]),
-    ("Research assistant",  "🔬",  "Exploring options, investigating",        "#1a7f37", True,
+    ("Researching",  "🔬",  "Exploring options, investigating",        "#1a7f37", True,
      ["Researching", "Investigating"]),
-    ("Creative partner",    "🎨",  "Design, strategy, architecture",          "#7b1fa2", True,
+    ("Designing",    "🎨",  "Design, strategy, architecture",          "#7b1fa2", True,
      ["Designing", "Planning"]),
-    ("Refinement partner",  "✨",  "Iterating, polishing, improving",         "#1565c0", True,
+    ("Refining",  "✨",  "Iterating, polishing, improving",         "#1565c0", True,
      ["Iterating"]),
-    ("Grunt work handled",  "⚡",  "Git ops, config, installs, routine",      "#6a737d", False,
+    ("Delegating",  "⚡",  "Git ops, config, installs, routine",      "#6a737d", False,
      ["Shipping", "Configuring", "Navigating"]),
-    ("Needed hand-holding", "🔧",  "Errors, retries, course-correcting AI",   "#e65100", False,
+    ("Course-correcting", "🔧",  "Errors, retries, course-correcting AI",   "#e65100", False,
      ["Testing"]),
 ]
 
@@ -741,22 +741,22 @@ def _collab_section(data: dict, source: str, tool_name: str) -> str:
     # Build mode_data tuples aligned with _COLLAB_MODES for card rendering
     # Tuple: (name, icon, desc, color, high_val, mins, pct, hrs_display)
     _QUALITY_COLOR_MAP = {
-        "Creative partner":    "#7b1fa2",
-        "Research assistant":  "#1a7f37",
-        "Builder":             "#0078d4",
-        "Refinement partner":  "#0969da",
-        "Needed hand-holding": "#e65100",
-        "Grunt work handled":  "#6a737d",
+        "Designing":    "#7b1fa2",
+        "Researching":  "#1a7f37",
+        "Building":             "#0078d4",
+        "Refining":  "#0969da",
+        "Course-correcting": "#e65100",
+        "Delegating":  "#6a737d",
     }
     _QUALITY_ICON_MAP = {
-        "Creative partner":    "🎨",
-        "Research assistant":  "🔬",
-        "Builder":             "🏗",
-        "Refinement partner":  "✨",
-        "Needed hand-holding": "🔧",
-        "Grunt work handled":  "⚡",
+        "Designing":    "🎨",
+        "Researching":  "🔬",
+        "Building":             "🏗",
+        "Refining":  "✨",
+        "Course-correcting": "🔧",
+        "Delegating":  "⚡",
     }
-    _HIGH_VALUE = {"Creative partner", "Research assistant", "Builder", "Refinement partner"}
+    _HIGH_VALUE = {"Designing", "Researching", "Building", "Refining"}
 
     mode_data = []
     for mode_name, mins in sorted(quality_modes.items(), key=lambda x: -x[1]):
@@ -768,14 +768,14 @@ def _collab_section(data: dict, source: str, tool_name: str) -> str:
         desc     = next((d for n, _i, d, *_ in _COLLAB_MODES if n == mode_name), "")
         if not desc:
             # Fallback desc for modes not in _COLLAB_MODES
-            desc = {"Needed hand-holding": "Errors, retries, course-correcting AI"}.get(mode_name, "")
+            desc = {"Course-correcting": "Errors, retries, course-correcting AI"}.get(mode_name, "")
         mode_data.append((mode_name, icon, desc, color, high_val, mins, pct, hrs))
     mode_data.sort(key=lambda x: -x[6])
 
     # Summary stats  (m: name, icon, desc, color, high_val, mins, pct, hrs)
     high_val_pct  = sum(m[6] for m in mode_data if m[4])
-    grunt_pct     = next((m[6] for m in mode_data if m[0] == "Grunt work handled"), 0)
-    handheld_pct  = next((m[6] for m in mode_data if m[0] == "Needed hand-holding"), 0)
+    grunt_pct     = next((m[6] for m in mode_data if m[0] == "Delegating"), 0)
+    handheld_pct  = next((m[6] for m in mode_data if m[0] == "Course-correcting"), 0)
     n_modes       = sum(1 for m in mode_data if m[5] > 0)   # mins > 0
 
     # High-value description
@@ -842,20 +842,20 @@ def _collab_comparison_section(copilot_modes: dict, claude_modes: dict,
         return ""
 
     _COLOR = {
-        "Creative partner":    "#7b1fa2",
-        "Research assistant":  "#1a7f37",
-        "Builder":             "#0078d4",
-        "Refinement partner":  "#0969da",
-        "Needed hand-holding": "#e65100",
-        "Grunt work handled":  "#6a737d",
+        "Designing":    "#7b1fa2",
+        "Researching":  "#1a7f37",
+        "Building":             "#0078d4",
+        "Refining":  "#0969da",
+        "Course-correcting": "#e65100",
+        "Delegating":  "#6a737d",
     }
     _ICON = {
-        "Creative partner":    "🎨",
-        "Research assistant":  "🔬",
-        "Builder":             "🏗",
-        "Refinement partner":  "✨",
-        "Needed hand-holding": "🔧",
-        "Grunt work handled":  "⚡",
+        "Designing":    "🎨",
+        "Researching":  "🔬",
+        "Building":             "🏗",
+        "Refining":  "✨",
+        "Course-correcting": "🔧",
+        "Delegating":  "⚡",
     }
 
     all_modes = sorted(
@@ -947,15 +947,12 @@ def _collab_comparison_section(copilot_modes: dict, claude_modes: dict,
   </td>
 </tr>"""
 
-    inner = f"""{_section_header("How I Collaborated", "Comparing collaboration style — % of active engagement time per tool")}
+    inner = f"""{_section_header("How I Collaborated", "Each bar = % of that tool's own active time — shows style, not volume")}
 <div style="padding:16px 24px 18px">
   {insight_html}
   <table width="100%" cellpadding="0" cellspacing="0">
     <tbody>{header_row}{rows}</tbody>
   </table>
-  <div style="font-size:10px;color:#6a737d;margin-top:12px">
-    Bars show each tool's % of its own active engagement time. Compare shapes, not lengths.
-  </div>
 </div>"""
     return _wrap_section(inner)
 
