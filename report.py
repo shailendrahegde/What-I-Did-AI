@@ -1799,6 +1799,62 @@ def _all_view(copilot_agg: dict | None, claude_agg: dict | None,
   </td>
 </tr>"""
 
+    # ── Token consumption section ──────────────────────────────────────────────
+    def _tok(agg):
+        return (agg or {}).get("tokens", {})
+
+    def _prem(agg):
+        return (agg or {}).get("premium_requests", 0) or 0
+
+    c_tok  = _tok(copilot_agg)
+    cl_tok = _tok(claude_agg)
+
+    def _fmt_tok(n):
+        if n >= 1_000_000: return f"{n/1_000_000:.1f}M"
+        if n >= 1_000:     return f"{n/1_000:.0f}K"
+        return str(n)
+
+    def _tok_card(label, cop_val, cla_val, cop_color, cla_color, note=""):
+        note_html = f'<div style="font-size:9px;color:#8a8a8a;margin-top:3px;font-style:italic">{note}</div>' if note else ""
+        cop_html = (f'<div style="font-size:13px;font-weight:700;color:{cop_color}">{_fmt_tok(cop_val)}</div>'
+                    f'<div style="font-size:9px;color:#6a737d;text-transform:uppercase;letter-spacing:0.5px">Copilot</div>') if include_copilot else ""
+        cla_html = (f'<div style="font-size:13px;font-weight:700;color:{cla_color}">{_fmt_tok(cla_val)}</div>'
+                    f'<div style="font-size:9px;color:#6a737d;text-transform:uppercase;letter-spacing:0.5px">Claude</div>') if include_claude else ""
+        divider  = '<div style="width:1px;background:#e1e4e8;margin:0 12px;align-self:stretch"></div>' if include_copilot and include_claude else ""
+        return f"""<td style="padding:6px;vertical-align:top">
+  <div style="background:#ffffff;border:1px solid #dde1e7;border-radius:9px;
+              padding:12px 14px;text-align:center;min-height:80px;
+              box-shadow:0 1px 3px rgba(0,0,0,0.05)">
+    <div style="font-size:9px;font-weight:700;color:#6a737d;text-transform:uppercase;
+                letter-spacing:0.8px;margin-bottom:8px">{_e(label)}</div>
+    <div style="display:flex;justify-content:center;align-items:center">
+      {cop_html}{divider}{cla_html}
+    </div>
+    {note_html}
+  </div>
+</td>"""
+
+    c_inp  = c_tok.get("input", 0);          cl_inp  = cl_tok.get("input", 0)
+    c_out  = c_tok.get("output", 0);         cl_out  = cl_tok.get("output", 0)
+    c_cr   = c_tok.get("cache_read", 0);     cl_cr   = cl_tok.get("cache_read", 0)
+    c_cc   = c_tok.get("cache_creation", 0); cl_cc   = cl_tok.get("cache_creation", 0)
+    c_prem = _prem(copilot_agg);             cl_prem = _prem(claude_agg)
+
+    cop_acc = ACCENT["copilot"]; cla_acc = ACCENT["claude"]
+
+    token_row = f"""<tr><td style="padding:0;border-left:1px solid #dde1e7;border-right:1px solid #dde1e7">
+  {_section_header("Token Consumption", "AI tokens used across both tools for this period")}
+  <div style="background:#f8f9fb;padding:10px 24px 16px">
+    <table width="100%" cellpadding="0" cellspacing="0"><tbody><tr>
+      {_tok_card("Input Tokens",    c_inp,  cl_inp,  cop_acc, cla_acc, "prompts & context sent to AI")}
+      {_tok_card("Output Tokens",   c_out,  cl_out,  cop_acc, cla_acc, "AI-generated response tokens")}
+      {_tok_card("Cache Read",      c_cr,   cl_cr,   cop_acc, cla_acc, "retrieved from prompt cache")}
+      {_tok_card("Cache Creation",  c_cc,   cl_cc,   cop_acc, cla_acc, "written to prompt cache")}
+      {_tok_card("Premium Requests", c_prem, cl_prem, cop_acc, cla_acc, "requests using premium quota")}
+    </tr></tbody></table>
+  </div>
+</td></tr>"""
+
     footer = f"""<tr>
   <td style="background:#ffffff;padding:12px 24px;
              border:1px solid #dde1e7;border-radius:0 0 9px 9px;text-align:center">
@@ -1820,6 +1876,7 @@ def _all_view(copilot_agg: dict | None, claude_agg: dict | None,
 {skills_row}
 {collab_row}
 {timing_row}
+{token_row}
 {footer}
 </tbody></table></td></tr></tbody></table>
 </div>"""
