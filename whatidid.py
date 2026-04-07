@@ -130,13 +130,13 @@ def main() -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # API health check
-    print("Checking Claude API … ", end="", flush=True)
+    # AI backend detection
+    print("Checking AI analysis API … ", end="", flush=True)
     api_status, api_msg = check_api_health()
     if api_status == "ok":
-        print("OK")
+        print(f"OK  [{api_msg}]")
     else:
-        print(f"{api_msg}")
+        print(f"unavailable\n  {api_msg}")
 
     use_api = (api_status == "ok")
 

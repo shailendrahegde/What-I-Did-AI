@@ -11,8 +11,14 @@ import urllib.error
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-API_URL = "https://api.anthropic.com/v1/messages"
-MODEL   = "claude-haiku-4-5-20251001"
+_ANTHROPIC_API_URL  = "https://api.anthropic.com/v1/messages"
+_ANTHROPIC_MODEL    = "claude-haiku-4-5-20251001"
+_GH_MODELS_API_URL  = "https://models.inference.ai.azure.com/chat/completions"
+_GH_MODELS_MODEL    = "gpt-4o-mini"
+
+# Keep legacy names for any external references
+API_URL = _ANTHROPIC_API_URL
+MODEL   = _ANTHROPIC_MODEL
 
 DOMAIN_SKILLS = (
     "System Architecture", "Product Planning", "Requirements Analysis",
@@ -53,54 +59,158 @@ def _load_taxonomy() -> tuple:
 _DOMAIN_SKILLS, _TECH_SKILLS = _load_taxonomy()
 
 
-def _get_api_key() -> str:
-    # Check environment first
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
+# ── Backend detection ─────────────────────────────────────────────────────────
+# Priority:
+#   1. ANTHROPIC_API_KEY env var           → Anthropic API (direct)
+#   2. ~/.claude/config.json primaryApiKey  → Anthropic API (direct)
+#   3. `claude` CLI on PATH                 → claude -p  (Claude Code OAuth session)
+#   4. `gh auth token`                      → GitHub Models API (Copilot context)
+#   5. heuristic fallback
+
+def _get_anthropic_key() -> str:
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if key:
         return key
-    # Check Claude config file
     config = Path.home() / ".claude" / "config.json"
     if config.exists():
         try:
             data = json.loads(config.read_text(encoding="utf-8"))
-            return data.get("primaryApiKey", "")
+            return data.get("primaryApiKey", "").strip()
         except Exception:
             pass
     return ""
 
 
-def check_api_health() -> tuple[str, str]:
-    """Returns (status, message). status: 'ok', 'auth', or 'down'."""
-    key = _get_api_key()
-    if not key:
-        return "auth", "No ANTHROPIC_API_KEY found. Set it to enable AI analysis."
+def _claude_cli_available() -> bool:
+    """Return True if the `claude` CLI is on PATH."""
+    import subprocess
+    try:
+        subprocess.run(["claude", "--version"], capture_output=True, timeout=10, check=True)
+        return True
+    except Exception:
+        return False
 
+
+def _claude_cli_analyze(prompt: str) -> str:
+    """Run `claude -p <prompt>` and return the raw text output."""
+    import subprocess
+    result = subprocess.run(
+        ["claude", "-p", prompt],
+        capture_output=True, text=True, timeout=180,
+        encoding="utf-8", errors="replace",
+    )
+    if result.returncode != 0:
+        raise subprocess.SubprocessError(
+            f"claude -p exited {result.returncode}: {result.stderr[:200]}"
+        )
+    return result.stdout.strip()
+
+
+def _get_gh_token() -> str:
+    """Return a GitHub token from `gh auth token`, GH_TOKEN, or GITHUB_TOKEN env vars."""
+    import subprocess
+    for env_var in ("GH_TOKEN", "GITHUB_TOKEN", "GITHUB_COPILOT_TOKEN"):
+        token = os.environ.get(env_var, "").strip()
+        if token:
+            return token
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"],
+            capture_output=True, text=True, timeout=10,
+        )
+        token = result.stdout.strip()
+        if token and result.returncode == 0:
+            return token
+    except Exception:
+        pass
+    return ""
+
+
+def _gh_models_analyze(prompt: str, gh_token: str) -> str:
+    """Call GitHub Models API (OpenAI-compatible) and return raw text response."""
     payload = json.dumps({
-        "model": MODEL,
-        "max_tokens": 10,
-        "messages": [{"role": "user", "content": "ping"}],
+        "model": _GH_MODELS_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 3000,
+        "temperature": 0,
     }).encode("utf-8")
-
     req = urllib.request.Request(
-        API_URL, data=payload,
+        _GH_MODELS_API_URL, data=payload,
         headers={
-            "x-api-key": key,
+            "Authorization": f"Bearer {gh_token}",
             "content-type": "application/json",
-            "anthropic-version": "2023-06-01",
         },
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=15):
-            return "ok", "API reachable."
-    except urllib.error.HTTPError as e:
-        if e.code in (401, 403):
-            return "auth", f"Authentication failed (HTTP {e.code})."
-        return "down", f"API returned HTTP {e.code}."
-    except urllib.error.URLError:
-        return "down", "API unreachable (network error or timeout)."
-    except Exception as e:
-        return "down", f"API check failed: {e}"
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        response = json.loads(resp.read().decode("utf-8"))
+    return response["choices"][0]["message"]["content"].strip()
+
+
+def _detect_backend() -> tuple[str, str]:
+    """
+    Detect the best available AI backend.
+    Returns (backend, credential) where backend is one of:
+      'anthropic'  — direct Anthropic API call
+      'claude_cli' — delegate to `claude -p` (Claude Code OAuth session)
+      'gh_models'  — GitHub Models API via gh token (Copilot context)
+      'none'       — no AI backend available
+    """
+    key = _get_anthropic_key()
+    if key:
+        return "anthropic", key
+
+    if _claude_cli_available():
+        return "claude_cli", ""
+
+    gh_token = _get_gh_token()
+    if gh_token:
+        return "gh_models", gh_token
+
+    return "none", ""
+
+
+def check_api_health() -> tuple[str, str]:
+    """Returns (status, message). status: 'ok', 'auth', or 'down'."""
+    backend, cred = _detect_backend()
+
+    if backend == "anthropic":
+        payload = json.dumps({
+            "model": _ANTHROPIC_MODEL,
+            "max_tokens": 10,
+            "messages": [{"role": "user", "content": "ping"}],
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            _ANTHROPIC_API_URL, data=payload,
+            headers={
+                "x-api-key": cred,
+                "content-type": "application/json",
+                "anthropic-version": "2023-06-01",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15):
+                return "ok", "Anthropic API"
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                return "auth", f"Anthropic key rejected (HTTP {e.code})."
+            return "down", f"Anthropic API returned HTTP {e.code}."
+        except Exception as e:
+            return "down", f"Anthropic API unreachable: {e}"
+
+    if backend == "claude_cli":
+        return "ok", "claude -p  (Claude Code session)"
+
+    if backend == "gh_models":
+        return "ok", f"GitHub Models API ({_GH_MODELS_MODEL})"
+
+    return "auth", (
+        "No AI backend found. Provide one of:\n"
+        "  • ANTHROPIC_API_KEY env var\n"
+        "  • Claude Code installed (claude CLI on PATH)\n"
+        "  • GitHub CLI authenticated (gh auth login)"
+    )
 
 
 def _build_transcript(sessions: list) -> tuple[str, int]:
@@ -494,13 +604,14 @@ def analyze_day(
             except Exception:
                 pass
 
-    # Attempt API analysis
+    # Attempt AI analysis
     if use_api:
-        key = _get_api_key()
-        if key:
-            result = _api_analyze(sessions, key)
+        backend, cred = _detect_backend()
+        if backend != "none":
+            result = _api_analyze(sessions, backend, cred)
             if result:
                 result["analysis_method"] = "ai"
+                result["analysis_backend"] = backend
                 _attach_metrics(result)
                 if cache_dir:
                     Path(cache_dir).mkdir(parents=True, exist_ok=True)
@@ -521,20 +632,17 @@ def analyze_day(
     return result
 
 
-def _api_analyze(sessions: list, api_key: str) -> dict | None:
-    """Call Claude API to analyze sessions. Returns parsed JSON or None on failure."""
+def _build_prompt(sessions: list) -> tuple[str, int]:
+    """Build the analysis prompt. Returns (prompt_text, total_tool_calls)."""
     transcript, total_tool_calls = _build_transcript(sessions)
     domain_list = ", ".join(_DOMAIN_SKILLS[:8]) + ", ..."
     tech_list   = ", ".join(_TECH_SKILLS[:8]) + ", ..."
-
-    total_tokens_all = sum(
-        s.get("tokens", {}).get("total", 0) for s in sessions
-    )
+    total_tokens_all = sum(s.get("tokens", {}).get("total", 0) for s in sessions)
 
     prompt_path = Path(__file__).parent / "prompts" / "analysis.txt"
     if prompt_path.exists():
         template = prompt_path.read_text(encoding="utf-8")
-        prompt   = template.format(
+        prompt = template.format(
             transcript=transcript,
             domain_list=domain_list,
             tech_list=tech_list,
@@ -542,39 +650,65 @@ def _api_analyze(sessions: list, api_key: str) -> dict | None:
             total_tokens_total=f"{total_tokens_all:,}",
         )
     else:
-        prompt = f"Analyze this AI work session transcript and return JSON with headline, day_narrative, and goals array:\n\n{transcript}"
+        prompt = (
+            "Analyze this AI work session transcript and return JSON "
+            "with headline, day_narrative, and goals array:\n\n" + transcript
+        )
+    return prompt, total_tool_calls
 
-    payload = json.dumps({
-        "model": MODEL,
-        "max_tokens": 3000,
-        "temperature": 0,
-        "messages": [{"role": "user", "content": prompt}],
-    }).encode("utf-8")
 
-    req = urllib.request.Request(
-        API_URL, data=payload,
-        headers={
-            "x-api-key": api_key,
-            "content-type": "application/json",
-            "anthropic-version": "2023-06-01",
-        },
-        method="POST",
-    )
+def _parse_raw_response(raw: str) -> dict:
+    """Strip markdown fences and parse JSON from a model response."""
+    if raw.startswith("```"):
+        raw = re.sub(r'^```[a-z]*\n?', '', raw)
+        raw = re.sub(r'\n?```$', '', raw.strip())
+    return json.loads(raw.strip())
 
+
+def _api_analyze(sessions: list, backend: str, cred: str) -> dict | None:
+    """
+    Call the detected AI backend to analyse sessions.
+    backend: 'anthropic' | 'claude_cli' | 'gh_models'
+    Returns parsed JSON dict or None on failure.
+    """
+    prompt, _ = _build_prompt(sessions)
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            response = json.loads(resp.read().decode("utf-8"))
-        raw = response["content"][0]["text"].strip()
-        # Strip markdown code fences if present
-        if raw.startswith("```"):
-            raw = re.sub(r'^```[a-z]*\n?', '', raw)
-            raw = re.sub(r'\n?```$', '', raw.strip())
-        result = json.loads(raw.strip())
+        if backend == "anthropic":
+            payload = json.dumps({
+                "model": _ANTHROPIC_MODEL,
+                "max_tokens": 3000,
+                "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}],
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                _ANTHROPIC_API_URL, data=payload,
+                headers={
+                    "x-api-key": cred,
+                    "content-type": "application/json",
+                    "anthropic-version": "2023-06-01",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                response = json.loads(resp.read().decode("utf-8"))
+            raw = response["content"][0]["text"].strip()
+
+        elif backend == "claude_cli":
+            raw = _claude_cli_analyze(prompt)
+
+        elif backend == "gh_models":
+            raw = _gh_models_analyze(prompt, cred)
+
+        else:
+            return None
+
+        result = _parse_raw_response(raw)
         result["sessions_count"] = len(sessions)
         result["projects"] = list({s.get("project", "") for s in sessions})
         return result
+
     except Exception as e:
-        print(f"  WARNING: API analysis failed ({type(e).__name__}: {e}). Using heuristic fallback.")
+        print(f"  WARNING: AI analysis failed ({type(e).__name__}: {e}). Using heuristic fallback.")
         return None
 
 
