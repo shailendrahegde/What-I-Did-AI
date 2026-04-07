@@ -297,12 +297,22 @@ def _parse_session_file(jsonl_path: Path, target_date: str, project_name: str, s
                 continue
 
             content = r.get("message", {}).get("content", "") if isinstance(r.get("message"), dict) else r.get("message", "")
+
+            # Tool-result records = tool-execution approvals (user pressed Enter/Y in TUI).
+            # They have no text content — count them as trivial approvals.
+            has_tool_result = isinstance(content, list) and any(
+                isinstance(c, dict) and c.get("type") == "tool_result" for c in content
+            )
+            if has_tool_result:
+                trivial_timestamps.append(ts)
+                # Still extract any accompanying text (rare but possible)
+
             text = _extract_text_from_content(content)
 
             if not text or len(text.strip()) == 0:
                 continue
 
-            # Skip pure approvals and single-digit menu selections (e.g. "1", "2")
+            # Skip pure text approvals and single-digit menu selections (e.g. "1", "2")
             cleaned = text.strip().rstrip(".!").lower()
             if len(cleaned.split()) <= 8 and (cleaned in _APPROVALS or _re.fullmatch(r'\d{1,2}', cleaned)):
                 trivial_timestamps.append(ts)
