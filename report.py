@@ -33,6 +33,12 @@ ACCENT_BG = {
     "claude":   "#fdf1ee",
     "combined": "#f0e8ff",
 }
+# Banner gradient: dark-to-brand for detail page headers
+BANNER_BG = {
+    "copilot":  "linear-gradient(135deg,#3b189e,#8534F3)",
+    "claude":   "linear-gradient(135deg,#a04028,#DE7356)",
+    "combined": "linear-gradient(135deg,#24292f,#1b1f23)",
+}
 ROI_BG = {
     "copilot":  "linear-gradient(135deg,#6a1fcf,#8534F3)",
     "claude":   "linear-gradient(135deg,#c45a3a,#DE7356)",
@@ -319,8 +325,8 @@ def _kpi_row(data: dict, source: str, active_days: int, vid: str = "") -> str:
             f'style="font-size:10px;color:{accent};text-decoration:none">see evidence &#9658;</a></div>'
         ) if link_onclick else ""
         return f"""<td style="padding:5px;vertical-align:top">
-  <div style="background:#ffffff;border:1px solid #dde1e7;border-radius:10px;
-              padding:14px 8px;text-align:center;min-height:90px;
+  <div style="background:#ffffff;border:1px solid #dde1e7;border-top:3px solid {accent};
+              border-radius:10px;padding:14px 8px;text-align:center;min-height:90px;
               box-shadow:0 1px 4px rgba(0,0,0,0.06)">
     <div style="font-size:24px;font-weight:700;color:{accent};line-height:1;
                 letter-spacing:-0.5px">{_e(value)}</div>
@@ -351,7 +357,8 @@ def _kpi_row(data: dict, source: str, active_days: int, vid: str = "") -> str:
     evid_id   = f"{vid}-" if vid else ""
     evid_click = f"var e=document.getElementById('{evid_id}evidence');if(e){{e.style.display='block';e.scrollIntoView({{behavior:'smooth'}});}}"
 
-    return f"""<tr><td style="background:#f0f2f5;padding:10px 24px;
+    kpi_bg = ACCENT_BG.get(source, "#f0f2f5")
+    return f"""<tr><td style="background:{kpi_bg};padding:10px 24px;
     border-left:1px solid #dde1e7;border-right:1px solid #dde1e7">
   <table width="100%" cellpadding="0" cellspacing="0"><tbody><tr>
     {_card(_fmt_h(hours), "Human Effort Equivalent", "", link_onclick=evid_click)}
@@ -924,12 +931,12 @@ def _collab_comparison_section(copilot_modes: dict, claude_modes: dict,
                 ) if pct > 0 else f'<div style="font-size:10px;color:#d0d7de">—</div>'
 
         rows += f"""<tr style="border-bottom:1px solid #f0f2f5">
-  <td style="text-align:right;padding:7px 8px 7px 0;width:38%">{_bar(cop_pct, "#0078d4", cop_min, "right")}</td>
+  <td style="text-align:right;padding:7px 8px 7px 0;width:38%">{_bar(cop_pct, ACCENT["copilot"], cop_min, "right")}</td>
   <td style="padding:7px 10px;text-align:center;white-space:nowrap;width:24%">
     <span style="font-size:10px;margin-right:4px">{icon}</span>
     <span style="font-size:11px;font-weight:600;color:{color}">{_e(mode)}</span>
   </td>
-  <td style="padding:7px 0 7px 8px;width:38%">{_bar(cla_pct, "#7B2FBE", cla_min, "left")}</td>
+  <td style="padding:7px 0 7px 8px;width:38%">{_bar(cla_pct, ACCENT["claude"], cla_min, "left")}</td>
 </tr>"""
 
     cop_active = f"{int(copilot_active_min)//60}h {int(copilot_active_min)%60}m" if copilot_active_min >= 60 else f"{int(copilot_active_min)}m"
@@ -937,14 +944,14 @@ def _collab_comparison_section(copilot_modes: dict, claude_modes: dict,
 
     header_row = f"""<tr style="border-bottom:2px solid #e1e4e8">
   <td style="text-align:right;padding:0 8px 10px 0">
-    <span style="font-size:11px;font-weight:700;color:#0078d4">● GitHub Copilot</span>
+    <span style="font-size:11px;font-weight:700;color:{ACCENT["copilot"]}">● GitHub Copilot</span>
     <span style="font-size:10px;color:#6a737d;margin-left:6px">{cop_active} active</span>
   </td>
   <td style="padding:0 10px 10px;text-align:center">
     <span style="font-size:10px;color:#6a737d;text-transform:uppercase;letter-spacing:0.5px">Mode</span>
   </td>
   <td style="padding:0 0 10px 8px">
-    <span style="font-size:11px;font-weight:700;color:#7B2FBE">● Claude</span>
+    <span style="font-size:11px;font-weight:700;color:{ACCENT["claude"]}">● Claude</span>
     <span style="font-size:10px;color:#6a737d;margin-left:6px">{cla_active} active</span>
   </td>
 </tr>"""
@@ -998,8 +1005,8 @@ def _timing_section(data: dict, source: str, tool_name: str,
   <td style="padding:4px 12px 4px 0;font-size:11px;color:#6a737d;white-space:nowrap;width:160px">{_e(bucket)}</td>
   <td style="padding:4px 0;width:auto">
     <div style="background:#f0f0f5;border-radius:4px;height:20px;width:100%;display:flex;overflow:hidden;align-items:center">
-      <div style="background:#0078d4;height:20px;width:{cop_w}%;min-width:{2 if cop_n else 0}px;display:flex;align-items:center;justify-content:flex-end">{cop_label}</div>
-      <div style="background:#7B2FBE;height:20px;width:{cla_w}%;min-width:{2 if cla_n else 0}px;display:flex;align-items:center;justify-content:flex-start">{cla_label}</div>
+      <div style="background:{ACCENT["copilot"]};height:20px;width:{cop_w}%;min-width:{2 if cop_n else 0}px;display:flex;align-items:center;justify-content:flex-end">{cop_label}</div>
+      <div style="background:{ACCENT["claude"]};height:20px;width:{cla_w}%;min-width:{2 if cla_n else 0}px;display:flex;align-items:center;justify-content:flex-start">{cla_label}</div>
     </div>
   </td>
   <td style="padding:4px 0 4px 0;width:0"></td>
@@ -1029,9 +1036,9 @@ def _timing_section(data: dict, source: str, tool_name: str,
     kpi_all = ""
 
     if split:
-        legend = """<div style="display:flex;gap:16px;margin-bottom:10px;font-size:11px;color:#6a737d">
-  <span><span style="display:inline-block;width:10px;height:10px;background:#0078d4;border-radius:2px;margin-right:4px"></span>GitHub Copilot</span>
-  <span><span style="display:inline-block;width:10px;height:10px;background:#7B2FBE;border-radius:2px;margin-right:4px"></span>Claude</span>
+        legend = f"""<div style="display:flex;gap:16px;margin-bottom:10px;font-size:11px;color:#6a737d">
+  <span><span style="display:inline-block;width:10px;height:10px;background:{ACCENT["copilot"]};border-radius:2px;margin-right:4px"></span>GitHub Copilot</span>
+  <span><span style="display:inline-block;width:10px;height:10px;background:{ACCENT["claude"]};border-radius:2px;margin-right:4px"></span>Claude</span>
 </div>"""
 
         def _kpi_chip(label, value, color):
@@ -1047,16 +1054,16 @@ def _timing_section(data: dict, source: str, tool_name: str,
         cop_f = sum(copilot_buckets.values())
         cla_f = sum(claude_buckets.values())
         kpi_filtered = f"""<div style="margin-bottom:14px;display:flex;flex-wrap:wrap;gap:4px">
-  {_kpi_chip("GitHub Copilot engagement", str(round(cop_f/cop_h)) if cop_h else "—", "#0078d4")}
-  {_kpi_chip("Claude engagement", str(round(cla_f/cla_h)) if cla_h else "—", "#7B2FBE")}
+  {_kpi_chip("GitHub Copilot engagement", str(round(cop_f/cop_h)) if cop_h else "—", ACCENT["copilot"])}
+  {_kpi_chip("Claude engagement", str(round(cla_f/cla_h)) if cla_h else "—", ACCENT["claude"])}
 </div>"""
 
         if has_all:
             cop_a = sum(copilot_buckets_all.values())
             cla_a = sum(claude_buckets_all.values())
             kpi_all = f"""<div style="margin-bottom:14px;display:flex;flex-wrap:wrap;gap:4px">
-  {_kpi_chip("GitHub Copilot engagement", str(round(cop_a/cop_h)) if cop_h else "—", "#0078d4")}
-  {_kpi_chip("Claude engagement", str(round(cla_a/cla_h)) if cla_h else "—", "#7B2FBE")}
+  {_kpi_chip("GitHub Copilot engagement", str(round(cop_a/cop_h)) if cop_h else "—", ACCENT["copilot"])}
+  {_kpi_chip("Claude engagement", str(round(cla_a/cla_h)) if cla_h else "—", ACCENT["claude"])}
 </div>"""
 
     # Toggle button (only shown when we have the "all" dataset)
@@ -1392,7 +1399,9 @@ def _source_view(view_id: str, data: dict | None, source: str,
                  tool_name: str,
                  n_days: int, active_days: int,
                  date_range_str: str) -> str:
-    accent = ACCENT[source]
+    accent     = ACCENT[source]
+    banner_bg  = BANNER_BG[source]
+    accent_bg  = ACCENT_BG[source]
     if not data:
         return f"""<div id="view-{view_id}" class="view">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f2f5;padding:24px 16px">
@@ -1413,7 +1422,7 @@ def _source_view(view_id: str, data: dict | None, source: str,
     headline     = data.get("headline", f"{tool_name} activity")
 
     header_row = f"""<tr>
-  <td style="background:linear-gradient(135deg,#24292f,#1b1f23);border-radius:9px 9px 0 0;padding:22px 24px">
+  <td style="background:{banner_bg};border-radius:9px 9px 0 0;padding:22px 24px">
     <div style="font-size:10px;color:rgba(255,255,255,0.6);letter-spacing:1.2px;
                 text-transform:uppercase;margin-bottom:4px">
       {_e(date_range_str)} &nbsp;·&nbsp; {_e(tool_name)} Impact Report
@@ -1485,7 +1494,7 @@ def _source_view(view_id: str, data: dict | None, source: str,
 def _top_projects_card(goals: list, source: str, tool_name: str, top_n: int = 5) -> str:
     accent   = ACCENT[source]
     bg       = ACCENT_BG.get(source, "#e8f2fb")
-    border   = "#0078d4" if source == "copilot" else "#7B2FBE"
+    border   = ACCENT.get(source, ACCENT["copilot"])
     extra_id = f"{source}-summary-extra"
     more_id  = f"{source}-summary-more"
 
@@ -1619,9 +1628,9 @@ def _all_view(copilot_agg: dict | None, claude_agg: dict | None,
     # Human effort card: Copilot/Claude split as sub-text
     hours_split_parts = []
     if include_copilot and c_hours:
-        hours_split_parts.append(f'<span style="color:#0078d4;font-weight:600">{_fmt_h(c_hours)} Copilot</span>')
+        hours_split_parts.append(f'<span style="color:{ACCENT["copilot"]};font-weight:600">{_fmt_h(c_hours)} Copilot</span>')
     if include_claude and cl_hours:
-        hours_split_parts.append(f'<span style="color:#7B2FBE;font-weight:600">{_fmt_h(cl_hours)} Claude</span>')
+        hours_split_parts.append(f'<span style="color:{ACCENT["claude"]};font-weight:600">{_fmt_h(cl_hours)} Claude</span>')
     hours_split_html = " &nbsp;+&nbsp; ".join(hours_split_parts)
 
     # Dark charcoal for overall summary cards — distinct from Copilot (blue) / Claude (purple)
@@ -1635,13 +1644,13 @@ def _all_view(copilot_agg: dict | None, claude_agg: dict | None,
     {_agg_card(_fmt_h(total_h), "Human Effort Equivalent", hours_split_html,
                bg=_dk, val_color="#ffffff", lbl_color="rgba(255,255,255,0.55)", sub_color="rgba(255,255,255,0.4)")}
     {_agg_card(_fmt_h(c_hours), "Copilot Human Est.",
-               f"{c_n_goals} goals · {c_sess} sessions", "#0078d4", "#0078d4") if include_copilot else ""}
+               f"{c_n_goals} goals · {c_sess} sessions", ACCENT["copilot"], ACCENT["copilot"]) if include_copilot else ""}
     {_agg_card(_fmt_active(c_active_min), "Copilot Active Time",
-               "engaged time with AI", "#0078d4", "#0078d4") if include_copilot else ""}
+               "engaged time with AI", ACCENT["copilot"], ACCENT["copilot"]) if include_copilot else ""}
     {_agg_card(_fmt_h(cl_hours), "Claude Human Est.",
-               f"{cl_n_goals} goals · {cl_sess} sessions", "#7B2FBE", "#7B2FBE") if include_claude else ""}
+               f"{cl_n_goals} goals · {cl_sess} sessions", ACCENT["claude"], ACCENT["claude"]) if include_claude else ""}
     {_agg_card(_fmt_active(cl_active_min), "Claude Active Time",
-               "engaged time with AI", "#7B2FBE", "#7B2FBE") if include_claude else ""}
+               "engaged time with AI", ACCENT["claude"], ACCENT["claude"]) if include_claude else ""}
   </tr></tbody></table>
 </td></tr>"""
 
@@ -1728,7 +1737,7 @@ def _all_view(copilot_agg: dict | None, claude_agg: dict | None,
                            + (claude_agg  or {}).get("active_minutes", 0)),
     }
 
-    skills_row = _skills_section(combined_goals, "#0078d4")
+    skills_row = _skills_section(combined_goals, ACCENT["copilot"])
     collab_row = _collab_comparison_section(
         copilot_modes=(copilot_agg or {}).get("quality_modes", {}),
         claude_modes=(claude_agg   or {}).get("quality_modes", {}),
