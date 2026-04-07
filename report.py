@@ -2001,7 +2001,6 @@ def _all_view(copilot_agg: dict | None, claude_agg: dict | None,
 {skills_row}
 {collab_row}
 {timing_row}
-{heatmap_row}
 {token_row}
 {footer}
 </tbody></table></td></tr></tbody></table>
@@ -2033,16 +2032,25 @@ def generate_report(
 
     tab_buttons = ""
     if show_all:
-        tab_buttons += f'<button class="tab-btn" id="tab-all" onclick="showTab(\'all\')">All</button>'
+        tab_buttons += (
+            f'<button class="tab-btn" id="tab-all" onclick="showTab(\'all\')">'
+            f'<span class="tab-label">Summary</span>'
+            f'<span class="tab-sub">Combined · {_fmt_h(c_hours + cl_hours)}</span>'
+            f'</button>'
+        )
     if include_copilot:
         tab_buttons += (
-            f'<button class="tab-btn" id="tab-copilot" onclick="showTab(\'copilot\')" style="color:#8534F3">'
-            f'GitHub Copilot <span class="tab-hours">· {_fmt_h(c_hours)}</span></button>'
+            f'<button class="tab-btn" id="tab-copilot" onclick="showTab(\'copilot\')">'
+            f'<span class="tab-label" style="color:#8534F3">GitHub Copilot</span>'
+            f'<span class="tab-sub">{_fmt_h(c_hours)} human equiv.</span>'
+            f'</button>'
         )
     if include_claude:
         tab_buttons += (
-            f'<button class="tab-btn" id="tab-claude" onclick="showTab(\'claude\')" style="color:#DE7356">'
-            f'Claude <span class="tab-hours">· {_fmt_h(cl_hours)}</span></button>'
+            f'<button class="tab-btn" id="tab-claude" onclick="showTab(\'claude\')">'
+            f'<span class="tab-label" style="color:#DE7356">Claude</span>'
+            f'<span class="tab-sub">{_fmt_h(cl_hours)} human equiv.</span>'
+            f'</button>'
         )
 
     all_view     = _all_view(copilot_agg, claude_agg, n_days, date_range_str,
@@ -2100,21 +2108,29 @@ window.onload = function() {{
 body {{ margin:0;padding:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; }}
 .tab-bar {{
   position:sticky; top:0; z-index:100;
-  background:#fff; border-bottom:2px solid #e1e4e8;
-  display:flex; align-items:stretch; padding:0 16px;
-  box-shadow:0 1px 4px rgba(0,0,0,0.08);
+  background:#1b1f23; border-bottom:1px solid #30363d;
+  display:flex; align-items:stretch; padding:0 24px;
+  box-shadow:0 2px 8px rgba(0,0,0,0.25);
+  gap:4px;
 }}
 .tab-btn {{
-  padding:12px 16px; font-size:13px; font-weight:500; color:#586069;
+  padding:16px 28px; font-size:13px; font-weight:500;
+  color:rgba(255,255,255,0.55);
   background:none; border:none; border-bottom:3px solid transparent;
-  cursor:pointer; margin-bottom:-2px; transition:all 0.15s;
-  display:flex; align-items:center; gap:6px; white-space:nowrap;
+  cursor:pointer; margin-bottom:-1px; transition:all 0.15s;
+  display:flex; flex-direction:column; align-items:flex-start;
+  gap:2px; white-space:nowrap;
 }}
-.tab-btn:hover {{ color:#24292f; background:#f6f8fa; }}
-.tab-btn.active {{ font-weight:600; }}
-#tab-all.active {{ color:#24292f; border-bottom-color:#24292f; }}
-#tab-copilot.active {{ color:#8534F3; border-bottom-color:#8534F3; }}
-#tab-claude.active {{ color:#DE7356; border-bottom-color:#DE7356; }}
+.tab-btn:hover {{ color:rgba(255,255,255,0.85); background:rgba(255,255,255,0.06); border-radius:4px 4px 0 0; }}
+.tab-label {{ font-size:14px; font-weight:700; line-height:1; }}
+.tab-sub {{ font-size:10px; font-weight:400; opacity:0.65; letter-spacing:0.2px; }}
+.tab-btn.active {{ color:#fff; }}
+.tab-btn.active .tab-label {{ color:inherit; }}
+#tab-all.active {{ border-bottom-color:#ffffff; }}
+#tab-copilot.active {{ border-bottom-color:#8534F3; }}
+#tab-copilot.active .tab-label {{ color:#b084f7; }}
+#tab-claude.active {{ border-bottom-color:#DE7356; }}
+#tab-claude.active .tab-label {{ color:#f0a080; }}
 .tab-hours {{ font-size:11px; font-weight:400; opacity:0.7; }}
 .view {{ display:none; }}
 </style>
