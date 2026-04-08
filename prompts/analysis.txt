@@ -90,65 +90,72 @@ Estimate realistically — what would an expert actually bill for this work?
 
 RESEARCH FOUNDATION:
 - LLM-assisted work completes 1.4–4× faster than unassisted work (Cambon et al. 2023, Peng et al. 2023)
-- The human EQUIVALENT is what matters: reverse the speedup to get what it would take WITHOUT AI
+- The human EQUIVALENT is what matters: start from the speedup and reverse it to estimate without AI
+- If a professional was actively engaged for 90 minutes directing AI, the human equivalent is 2–6h
+  (1.4–4× range). Use the nature of the work to pick within that range — routine tasks → lower end,
+  design and decision-heavy work → upper end.
 - No single metric captures effort — use MULTIPLE signals together (SPACE framework, Forsgren 2021)
-- Empirical OLS regression on 48 days of sessions (R²≈0.40) identified THREE independent signals:
-    1. Conversation turns  — logarithmic: early turns count most, later turns have diminishing returns
+- Three signals independently explain AI-assisted effort (OLS regression, 48 days):
+    1. Conversation turns  — each substantive turn represents real human thinking (framing, deciding, reviewing)
     2. Logic code lines    — only .py/.ts/.go/.rs/.java/.sh and similar; HTML/CSS/JSON/MD excluded
     3. Read/search calls   — file reads + grep/glob/search; captures investigation with no code output
-- Adding complexity multipliers on top degraded accuracy — the log curves already handle diminishing returns
-- Boilerplate lines (HTML/CSS/JSON/MD/YAML) have r=−0.14 correlation with effort; logic lines r=+0.41
+- Boilerplate lines (HTML/CSS/JSON/MD/YAML) correlate NEGATIVELY with effort (r=−0.14); logic lines r=+0.41
 
 Each session includes a SIGNALS block. USE IT to calibrate — do not ignore these numbers.
 
+THE FORMULA IS A FLOOR, NOT A CEILING.
+The deterministic formula (turns_h + lines_h + reads_h) gives the minimum plausible estimate
+based on mechanical counts. Your semantic judgment about the QUALITY of the work — what decisions
+were made, what expertise was required, what would an expert firm bill — should typically result
+in an estimate AT OR ABOVE the formula floor, not below it. The formula cannot see business value;
+you can.
+
 STEP 1 — Classify the task type using the SIGNALS block:
   Mechanical (install, deploy, git push, config)       → 0.25–0.5h regardless of other signals
-  Research/Analysis (read-heavy tools, low edits)      → turns_h + reads_h; lines_h ≈ 0
-  Implementation (edit-heavy, logic lines added)        → turns_h + lines_h (logic only) + reads_h
-  Debugging (run-heavy, high iteration)                 → turns_h + reads_h; the iteration is already in turns
-  Complex multi-step (balanced reads+edits+runs)        → all three terms contribute
+  Research/Analysis (read-heavy tools, low edits)      → active_minutes × 2–3 is a good anchor
+  Implementation (edit-heavy, logic lines added)        → logic lines ÷ 100 LoC/hr + research overhead
+  Debugging (run-heavy, high iteration)                 → base + 50% premium for rework and validation
+  Complex multi-step (balanced reads+edits+runs)        → use highest signal as floor, apply judgment upward
 
-STEP 2 — Estimate each of the three additive components:
+STEP 2 — Estimate from multiple signals and use the HIGHEST:
 
-  TURNS_H — Conversation depth (substantive turns only — exclude 'yes', 'commit', 'ok', single-digit replies):
-    Formula: max(0, −0.15 + 0.67 × ln(turns + 1))
-    Reference table:
-      3 turns → 0.75h    |  8 turns → 1.2h   |  15 turns → 1.6h
-      25 turns → 1.9h    |  40 turns → 2.2h   |  60 turns → 2.5h
-      80 turns → 2.7h    |  100 turns → 2.8h  |  150 turns → 3.1h
-    The log curve captures diminishing returns: going from 5→15 turns adds more effort than 85→95 turns,
-    because early turns drive decisions while later turns are refinements.
+  ACTIVE TIME (primary real-world anchor):
+    active_minutes × 2 = conservative human-equivalent (1.4× research lower bound)
+    active_minutes × 4 = generous human-equivalent (upper research bound, Cambon 2023)
+    Use × 2–3 for routine/mechanical work. Use × 3–4 for design, debugging, research, decision-making.
+    Example: 90 min active on a feature design → 3–4h human equivalent is appropriate.
 
-  LINES_H — Logic code written (ONLY logic code files — NOT boilerplate):
+  CONVERSATION TURNS (collaboration depth — substantive turns only, exclude 'yes'/'commit'/'ok'):
+    Each substantive turn ≈ 5–8 min of expert thinking (framing, reviewing output, deciding next steps).
+    1–3 = 0.25h  |  4–8 = 0.75h  |  9–15 = 1.5h  |  16–30 = 2.5–3h
+    31–60 = 3–5h  |  61–100 = 5–8h  |  100+ = 8–12h
+    Heavy iteration (many turns on same problem) signals complexity — estimate toward the upper end.
+
+  LOGIC CODE LINES (ONLY logic code files — NOT boilerplate):
     INCLUDE: .py .js .ts .jsx .tsx .go .rs .java .cs .cpp .c .sh .bash .rb .sql .kt .swift and similar
     EXCLUDE: .html .css .json .md .yaml .yml .csv .xml .toml .lock and all other markup/data/template files
     AI generates boilerplate cheaply; a human expert would write a template, not hand-author every line.
-    Formula: 0.40 × log₂(logic_lines ÷ 100 + 1)
-    Reference table:
-      50 lines → +0.20h   |  100 lines → +0.40h  |  200 lines → +0.63h
-      500 lines → +1.03h  |  1000 lines → +1.33h  |  3000 lines → +1.68h
+    Expert writes 80–130 LoC/hr of logic code. 100 lines = ~1h, 300 lines = 2.5h, 800 lines = 6h.
 
-  READS_H — Investigation and analysis (file reads + grep/glob/search tool calls):
-    This term captures research, exploration, and debugging sessions where the work is understanding,
-    not code output. A session with 50 file reads and searches required skilled navigation and judgment
-    even if it produced few or no code lines. (Vaithilingam 2022, SPACE Activity dimension, Alaswad 2026)
-    Formula: 0.10 × log₂(read_calls + 1)
-    Reference table:
-      5 reads → +0.26h  |  10 → +0.35h  |  20 → +0.44h  |  50 → +0.57h  |  100 → +0.67h
+  READ/SEARCH CALLS (investigation and analysis):
+    File reads + grep/glob/search calls indicate exploration and research effort even with no code output.
+    A session with 40+ reads required skilled navigation and judgment. Add 0.5–1h for read-heavy sessions.
 
-  TOTAL = turns_h + lines_h + reads_h
-  (minimum 0.25h, rounded to nearest 0.25h)
+  Use the HIGHEST of (active_h, turns_h, lines_h) as your base, then add reads contribution.
+  Apply upward judgment for genuinely complex, decision-heavy, or architecturally significant work.
 
-  These are CALIBRATION ANCHORS. Your semantic judgment about what was actually accomplished,
-  the decisions made, and the business value delivered should override the formula when warranted.
-  The formula captures the average — you are estimating THIS specific piece of work.
+STEP 3 — Apply complexity adjustments based on what you read in the transcript:
+  Iteration and rework (many turns on same files, errors corrected)  → +25–50% on base
+  Broad scope (10+ files, multiple systems)                          → +20–30% for coordination overhead
+  Design decisions with lasting impact (architecture, APIs, schemas) → scale toward upper anchors
+  Novel problem-solving (not routine, required creative synthesis)   → scale toward upper anchors
+  Pure execution (copying files, running scripts, pushing code)      → do NOT inflate; cap at 0.5h
 
-STEP 3 — Reality-check against anchors:
+STEP 4 — Reality-check against outcome anchors:
   0.25h    — Trivial: install a package, run a CLI command, toggle a config, push to git
   0.5h     — Simple: minor code edit, format/style tweak, rename, answer a question
-  0.75h    — Light: write a helper function, fix a known bug, small template change
-  1.0–1.5h — Moderate: implement a small feature, debug an unknown issue, draft a short document
-  2–3h     — Substantial: design + implement a feature, write a detailed report, complex data analysis
+  1.0–1.5h — Moderate: implement a small feature, debug a known issue, draft a short document
+  2–4h     — Substantial: design + implement a feature, write a detailed report, complex data analysis
   4–8h     — Major: architect a new module, build a complete tool, comprehensive multi-step research
   8–16h    — Large: build a full system from scratch, multi-day design-implement-test cycle
 
