@@ -77,44 +77,30 @@ _COLLAB_MODES = [
 
 
 # ── Effort-estimation helpers (deterministic formula) ─────────────────────────
-
-def _tools_h(reads: int, edits: int, runs: int) -> float:
-    return (reads * 0.3 + edits * 1.5 + runs * 0.75) / 60
-
+# Formula (OLS-calibrated, R²≈0.40 per goal on 48 days of data):
+#   turns_h = max(0, -0.15 + 0.67 × ln(turns + 1))
+#   lines_h = 0.40 × log₂(lines_logic / 100 + 1)   [logic code only — .py/.ts/.go/…]
+#   reads_h = 0.10 × log₂(read_calls + 1)           [file reads + grep/glob/search]
+#   total   = max(turns_h + lines_h + reads_h, 0.25), rounded to 0.25h
+import math as _math
 
 def _turns_h(turns: int) -> float:
-    if turns <= 0:  return 0.0
-    if turns <= 3:  return 0.25
-    if turns <= 8:  return 0.75
-    if turns <= 15: return 1.5
-    if turns <= 30: return 3.0
-    if turns <= 60: return 5.0
-    return 8.0 + (turns - 60) * 0.1
+    return max(0.0, -0.15 + 0.67 * _math.log1p(turns))
 
 
-def _active_h(minutes: float) -> float:
-    return round(minutes * 4 / 60, 2)
+def _lines_h(lines_logic: int) -> float:
+    if lines_logic <= 0: return 0.0
+    return 0.40 * _math.log2(lines_logic / 100 + 1)
 
 
-def _lines_h(lines: int) -> float:
-    if lines <= 0:   return 0.0
-    if lines <= 50:  return 0.25
-    if lines <= 150: return 0.75
-    if lines <= 300: return 1.5
-    if lines <= 500: return 2.5
-    return 4.0 + (lines - 500) / 500
+def _reads_h(read_calls: int) -> float:
+    if read_calls <= 0: return 0.0
+    return 0.10 * _math.log2(read_calls + 1)
 
 
-def _complexity_mult(turns: int, files: int, edits: int) -> float:
-    mult = 1.0
-    if turns > 15: mult += 0.15
-    if turns > 40: mult += 0.20
-    itr = edits / max(files, 1)
-    if itr > 5:  mult += 0.15
-    if itr > 12: mult += 0.20
-    if files > 3:  mult += 0.10
-    if files > 10: mult += 0.20
-    return min(round(mult, 2), 1.5)
+def _det_est(turns: int, lines_logic: int, read_calls: int) -> float:
+    total = _turns_h(turns) + _lines_h(lines_logic) + _reads_h(read_calls)
+    return max(0.25, round(total * 4) / 4)
 
 
 DOMAIN_PILL_BG = "#fff3e0"
@@ -1279,29 +1265,23 @@ def _evidence_section(data: dict, accent: str, vid: str = "") -> str:
     total_det    = 0.0
 
     for proj, s in sorted(sm.items(), key=lambda x: -x[1].get("tool_invocations", 0)):
-        reads  = s.get("reads", 0)
-        edits  = s.get("edits", 0)
-        runs   = s.get("runs", 0)
-        turns  = s.get("conversation_turns", 0)
-        lines  = s.get("lines_added", 0)
-        files  = s.get("files_touched", 0)   # may be 0 for old cache
-        act_m  = s.get("active_minutes", 0.0)
-        itr    = round(edits / max(files, 1), 1) if files else edits
+        reads      = s.get("reads", 0)
+        searches   = s.get("searches", 0)
+        edits      = s.get("edits", 0)
+        runs       = s.get("runs", 0)
+        turns      = s.get("conversation_turns", 0)
+        lines_lg   = s.get("lines_logic", s.get("lines_added", 0))   # prefer logic lines; fall back for old cache
+        lines_bp   = s.get("lines_boilerplate", 0)
+        files      = s.get("files_touched", 0)
+        act_m      = s.get("active_minutes", 0.0)
+        itr        = round(edits / max(files, 1), 1) if files else edits
+        read_calls = reads + searches
 
-        th = _tools_h(reads, edits, runs)
-        ah = _active_h(act_m)
-        lh = _lines_h(abs(lines))
-        nh = _turns_h(turns)
-        cx = _complexity_mult(turns, files if files else max(1, edits // 5), edits)
-
-        # Winning signal = max(tools, active, turns); lines is additive
-        signals = {"tools": th, "active": ah, "turns": nh}
-        win_key = max(signals, key=signals.get)
-        win_h   = signals[win_key]
-        det_est = round((win_h * cx + lh) * 4) / 4
-
-        cx_pct  = int((cx - 1.0) * 100)
-        total_det += det_est
+        th = _turns_h(turns)
+        lh = _lines_h(lines_lg)
+        rh = _reads_h(read_calls)
+        det = _det_est(turns, lines_lg, read_calls)
+        total_det += det
 
         # Match to an AI estimate from goals
         goals_for_proj = [g for g in data.get("goals", [])
@@ -1311,9 +1291,8 @@ def _evidence_section(data: dict, accent: str, vid: str = "") -> str:
         if ai_est is not None:
             total_ai_est += ai_est
 
-        proj_rows.append((proj, reads, edits, runs, turns, lines, files, itr,
-                          act_m, th, ah, lh, nh, cx, cx_pct, win_key,
-                          det_est, ai_est))
+        proj_rows.append((proj, reads, searches, edits, runs, turns, lines_lg, lines_bp,
+                          files, itr, act_m, th, lh, rh, read_calls, det, ai_est))
 
     # ── Table header ────────────────────────────────────────────────────────
     th_style = (f'style="padding:5px 8px;font-size:9px;font-weight:700;color:{accent};'
@@ -1332,54 +1311,49 @@ def _evidence_section(data: dict, accent: str, vid: str = "") -> str:
 </tr>"""
 
     # ── Per-project rows ─────────────────────────────────────────────────────
-    def _sig_cell(val_h: float, is_winner: bool) -> str:
-        s_txt = _fmt_h(val_h) if val_h > 0 else "—"
-        style = (f'font-size:11px;font-weight:{"800" if is_winner else "400"};'
-                 f'color:{accent if is_winner else "#6a737d"};'
-                 f'{"text-decoration:underline;" if is_winner else ""}')
-        return f'<td style="padding:4px 8px;text-align:center;{style}">{s_txt}</td>'
+    def _comp_cell(val_h: float, label: str) -> str:
+        """Small formula-component cell shown in the signal-hours sub-row."""
+        if val_h <= 0:
+            return f'<td style="padding:2px 8px 6px;text-align:center;font-size:10px;color:#6a737d">—</td>'
+        return (f'<td style="padding:2px 8px 6px;text-align:center;font-size:10px;color:{accent}">'
+                f'{_fmt_h(val_h)}<span style="font-size:8px;color:#6a737d;margin-left:2px">({label})</span></td>')
 
     table_rows = ""
-    for (proj, reads, edits, runs, turns, lines, files, itr,
-         act_m, th, ah, lh, nh, cx, cx_pct, win_key,
-         det_est, ai_est) in proj_rows:
+    for (proj, reads, searches, edits, runs, turns, lines_lg, lines_bp,
+         files, itr, act_m, th, lh, rh, read_calls, det, ai_est) in proj_rows:
 
-        cx_badge = (
-            f'<span style="font-size:9px;font-weight:700;color:{accent};background:{ACCENT_BG.get("copilot","#e8f2fb")};'
-            f'padding:1px 5px;border-radius:6px;margin-left:6px">+{cx_pct}%</span>'
-            if cx_pct > 0 else ""
-        )
-        tools_breakdown = f'<div style="font-size:9px;color:#6a737d;margin-top:2px">{reads}r · {edits}e · {runs}x</div>'
-        ai_cell = _fmt_h(ai_est) if ai_est is not None else "—"
-        lines_disp = f"+{lines:,}" if lines >= 0 else f"{lines:,}"
+        tools_breakdown = (f'<div style="font-size:9px;color:#6a737d;margin-top:2px">'
+                           f'{read_calls}r · {edits}e · {runs}x</div>')
+        ai_cell    = _fmt_h(ai_est) if ai_est is not None else "—"
+        lines_disp = f"+{lines_lg:,}" if lines_lg >= 0 else f"{lines_lg:,}"
+        if lines_bp:
+            lines_disp += f'<span style="font-size:9px;color:#6a737d"> +{lines_bp:,}bp</span>'
         act_disp   = f"{int(act_m)}m" if act_m else "—"
         files_disp = str(files) if files else "—"
         itr_disp   = str(itr)   if files else "—"
 
         table_rows += f"""<tr style="border-bottom:1px solid #f0f2f5">
   <td style="padding:8px 8px;vertical-align:top;font-size:11px;font-weight:600;color:#1b1f23;max-width:200px">
-    {_e(proj)}{cx_badge}
+    {_e(proj)}
     {tools_breakdown}
   </td>
-  <td style="padding:8px 8px;text-align:center;font-size:12px;font-weight:700;color:#1b1f23;vertical-align:top">{reads+edits+runs}</td>
+  <td style="padding:8px 8px;text-align:center;font-size:12px;font-weight:700;color:#1b1f23;vertical-align:top">{read_calls + edits + runs}</td>
   <td style="padding:8px 8px;text-align:center;font-size:11px;color:#6a737d;vertical-align:top">{act_disp}</td>
   <td style="padding:8px 8px;text-align:center;font-size:11px;color:#6a737d;vertical-align:top">{lines_disp}</td>
   <td style="padding:8px 8px;text-align:center;font-size:11px;color:#6a737d;vertical-align:top">{turns}</td>
   <td style="padding:8px 8px;text-align:center;font-size:11px;color:#6a737d;vertical-align:top">{files_disp}</td>
   <td style="padding:8px 8px;text-align:center;font-size:11px;color:#6a737d;vertical-align:top">{itr_disp}</td>
-  {_sig_cell(det_est, win_key == "tools" or True)}
+  <td style="padding:8px 8px;text-align:right;font-size:13px;font-weight:700;color:{accent};vertical-align:top;white-space:nowrap">{_fmt_h(det)}</td>
   <td style="padding:8px 8px;text-align:right;font-size:13px;font-weight:700;color:#1a7f37;vertical-align:top;white-space:nowrap">
     {_e(ai_cell)}
   </td>
 </tr>
 <tr style="border-bottom:1px solid #e8eaf0;background:#fafbfc">
-  <td style="padding:2px 8px 6px;font-size:9px;color:#6a737d">signal hours</td>
-  <td style="padding:2px 8px 6px;text-align:center;font-size:10px;{"font-weight:700;color:"+accent if win_key=="tools" else "color:#6a737d"}">{_fmt_h(th) if th else "—"}</td>
-  <td style="padding:2px 8px 6px;text-align:center;font-size:10px;{"font-weight:700;color:"+accent if win_key=="active" else "color:#6a737d"}">{_fmt_h(ah) if ah else "—"}</td>
-  <td style="padding:2px 8px 6px;text-align:center;font-size:10px;color:#6a737d">{_fmt_h(lh) if lh else "—"}</td>
-  <td style="padding:2px 8px 6px;text-align:center;font-size:10px;{"font-weight:700;color:"+accent if win_key=="turns" else "color:#6a737d"}">{_fmt_h(nh) if nh else "—"}</td>
-  <td colspan="2" style="padding:2px 8px 6px;font-size:9px;color:#6a737d">complexity signals</td>
-  <td colspan="2" style="padding:2px 8px 6px;text-align:right;font-size:10px;font-weight:700;color:{accent}">{_fmt_h(det_est)}</td>
+  <td style="padding:2px 8px 6px;font-size:9px;color:#6a737d">formula components</td>
+  <td colspan="3" style="padding:2px 8px 6px;font-size:9px;color:#6a737d">
+    turns {_fmt_h(th)} + logic&nbsp;lines {_fmt_h(lh)} + reads {_fmt_h(rh)}
+  </td>
+  <td colspan="5" style="padding:2px 8px 6px;text-align:right;font-size:10px;font-weight:700;color:{accent}">{_fmt_h(det)}</td>
 </tr>"""
 
     total_row = f"""<tr style="background:#f0f2f5;border-top:2px solid {accent}">
@@ -1397,57 +1371,42 @@ def _evidence_section(data: dict, accent: str, vid: str = "") -> str:
     How the Effort Estimate Is Calculated</span>
 </div>
 <div id="{meth_id}-tasks" style="display:none;margin-top:4px">
-  <div style="font-size:12px;color:{accent};font-family:monospace;background:#f0f2f5;padding:8px 12px;border-radius:6px;margin-bottom:10px">
-    total = (max(tools, active, turns) × complexity) + lines
-    <span style="font-size:10px;color:#6a737d;font-family:sans-serif;margin-left:10px">— strongest signal wins, plus lines as additive</span>
+  <div style="font-size:12px;color:{accent};font-family:monospace;background:#f0f2f5;padding:8px 12px;border-radius:6px;margin-bottom:6px">
+    total = turns_h + lines_h + reads_h
+  </div>
+  <div style="font-size:11px;color:#6a737d;margin-bottom:10px;line-height:1.6">
+    Three questions, added together:
+    <strong>How deep was the collaboration?</strong> (turns — logarithmic: early turns count more than late ones)&nbsp;&nbsp;+&nbsp;&nbsp;
+    <strong>How much logic code was written?</strong> (lines in .py/.ts/.go/… — <em>not</em> HTML/CSS/JSON/MD)&nbsp;&nbsp;+&nbsp;&nbsp;
+    <strong>How much investigation happened?</strong> (file reads + grep/glob/search calls — captures research and analysis with no code output)
   </div>
   <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dde1e7;border-radius:7px;overflow:hidden;margin-bottom:10px">
     <thead><tr style="background:#e8f2fb">
-      <th style="padding:6px 10px;text-align:left;font-size:9px;font-weight:700;color:{accent};text-transform:uppercase">Signal</th>
-      <th style="padding:6px 10px;font-size:9px;font-weight:700;color:{accent};text-transform:uppercase">Rate</th>
-      <th style="padding:6px 10px;font-size:9px;font-weight:700;color:{accent};text-transform:uppercase">Tier Mapping</th>
+      <th style="padding:6px 10px;text-align:left;font-size:9px;font-weight:700;color:{accent};text-transform:uppercase">Term</th>
+      <th style="padding:6px 10px;font-size:9px;font-weight:700;color:{accent};text-transform:uppercase">Formula</th>
+      <th style="padding:6px 10px;font-size:9px;font-weight:700;color:{accent};text-transform:uppercase">Scale (sample values)</th>
     </tr></thead>
     <tbody>
-      <tr><td style="padding:5px 10px;font-size:11px">Tool invocations</td>
-          <td style="padding:5px 10px;font-size:11px;color:#6a737d">weighted by type</td>
-          <td style="padding:5px 10px;font-size:11px;color:#6a737d">reads×0.3m &nbsp;edits×1.5m &nbsp;runs×0.75m</td></tr>
-      <tr style="background:#fafbfc"><td style="padding:5px 10px;font-size:11px">Active time</td>
-          <td style="padding:5px 10px;font-size:11px;color:#6a737d">×4 multiplier</td>
-          <td style="padding:5px 10px;font-size:11px;color:#6a737d">active_minutes × 4 ÷ 60  (upper bound of 1.4–4× research range)</td></tr>
-      <tr><td style="padding:5px 10px;font-size:11px">Conversation turns</td>
-          <td style="padding:5px 10px;font-size:11px;color:#6a737d">~5–7 min/turn</td>
-          <td style="padding:5px 10px;font-size:11px;color:#6a737d">1–3→0.25h &nbsp;4–8→0.75h &nbsp;9–15→1.5h &nbsp;16–30→3h &nbsp;31–60→5h &nbsp;61+→8h+</td></tr>
-      <tr style="background:#fafbfc"><td style="padding:5px 10px;font-size:11px">Lines of code</td>
-          <td style="padding:5px 10px;font-size:11px;color:#6a737d">100–150 LoC/hr</td>
-          <td style="padding:5px 10px;font-size:11px;color:#6a737d">1–50→0.25h &nbsp;51–150→0.75h &nbsp;151–300→1.5h &nbsp;301–500→2.5h &nbsp;500+→4h+ (additive)</td></tr>
-    </tbody>
-  </table>
-  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#6a737d;margin-bottom:6px">Complexity Multipliers</div>
-  <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dde1e7;border-radius:7px;overflow:hidden">
-    <thead><tr style="background:#e8f2fb">
-      <th style="padding:6px 10px;text-align:left;font-size:9px;font-weight:700;color:{accent};text-transform:uppercase">Signal</th>
-      <th style="padding:6px 10px;font-size:9px;font-weight:700;color:{accent};text-transform:uppercase">When</th>
-      <th style="padding:6px 10px;font-size:9px;font-weight:700;color:{accent};text-transform:uppercase">Adjust</th>
-    </tr></thead>
-    <tbody>
-      <tr><td style="padding:5px 10px;font-size:11px">Conversation turns</td>
-          <td style="padding:5px 10px;font-size:11px;color:#6a737d">&gt; 15</td>
-          <td style="padding:5px 10px;font-size:11px;font-weight:600;color:{accent}">+15%</td></tr>
-      <tr style="background:#fafbfc"><td style="padding:5px 10px;font-size:11px">Conversation turns</td>
-          <td style="padding:5px 10px;font-size:11px;color:#6a737d">&gt; 40</td>
-          <td style="padding:5px 10px;font-size:11px;font-weight:600;color:{accent}">+20% more</td></tr>
-      <tr><td style="padding:5px 10px;font-size:11px">Iteration depth</td>
-          <td style="padding:5px 10px;font-size:11px;color:#6a737d">&gt; 5 edits/file</td>
-          <td style="padding:5px 10px;font-size:11px;font-weight:600;color:{accent}">+15%</td></tr>
-      <tr style="background:#fafbfc"><td style="padding:5px 10px;font-size:11px">Iteration depth</td>
-          <td style="padding:5px 10px;font-size:11px;color:#6a737d">&gt; 12 edits/file</td>
-          <td style="padding:5px 10px;font-size:11px;font-weight:600;color:{accent}">+20% more</td></tr>
-      <tr><td style="padding:5px 10px;font-size:11px">Files touched</td>
-          <td style="padding:5px 10px;font-size:11px;color:#6a737d">&gt; 3</td>
-          <td style="padding:5px 10px;font-size:11px;font-weight:600;color:{accent}">+10%</td></tr>
-      <tr style="background:#fafbfc"><td style="padding:5px 10px;font-size:11px">Files touched</td>
-          <td style="padding:5px 10px;font-size:11px;color:#6a737d">&gt; 10</td>
-          <td style="padding:5px 10px;font-size:11px;font-weight:600;color:{accent}">+20% more (cap 1.5×)</td></tr>
+      <tr>
+        <td style="padding:5px 10px;font-size:11px;font-weight:600">turns_h</td>
+        <td style="padding:5px 10px;font-size:11px;color:#6a737d;font-family:monospace">max(0, &minus;0.15 + 0.67 &times; ln(turns+1))</td>
+        <td style="padding:5px 10px;font-size:11px;color:#6a737d">5t→0.9h &nbsp;15t→1.6h &nbsp;30t→2.0h &nbsp;60t→2.5h &nbsp;100t→2.8h</td>
+      </tr>
+      <tr style="background:#fafbfc">
+        <td style="padding:5px 10px;font-size:11px;font-weight:600">lines_h</td>
+        <td style="padding:5px 10px;font-size:11px;color:#6a737d;font-family:monospace">0.40 &times; log&#8322;(lines_logic&divide;100 + 1)</td>
+        <td style="padding:5px 10px;font-size:11px;color:#6a737d">logic code only &mdash; .py .ts .go .rs .java .sh&hellip; &nbsp;|&nbsp; HTML/CSS/JSON/MD excluded &nbsp;|&nbsp; 100L→0.4h &nbsp;500L→1.0h &nbsp;2000L→1.6h</td>
+      </tr>
+      <tr>
+        <td style="padding:5px 10px;font-size:11px;font-weight:600">reads_h</td>
+        <td style="padding:5px 10px;font-size:11px;color:#6a737d;font-family:monospace">0.10 &times; log&#8322;(read_calls + 1)</td>
+        <td style="padding:5px 10px;font-size:11px;color:#6a737d">file reads + grep/glob/search &nbsp;|&nbsp; 10→+0.35h &nbsp;50→+0.57h &nbsp;100→+0.67h</td>
+      </tr>
+      <tr style="background:#fafbfc">
+        <td style="padding:5px 10px;font-size:11px;font-weight:600;color:{accent}">total</td>
+        <td style="padding:5px 10px;font-size:11px;color:#6a737d;font-family:monospace">max(turns_h + lines_h + reads_h, 0.25h)</td>
+        <td style="padding:5px 10px;font-size:11px;color:#6a737d">floor 0.25h &nbsp;·&nbsp; rounded to nearest 0.25h &nbsp;·&nbsp; OLS-calibrated R²≈0.40 on 48 days</td>
+      </tr>
     </tbody>
   </table>
 </div>"""
@@ -1468,9 +1427,8 @@ def _evidence_section(data: dict, accent: str, vid: str = "") -> str:
     The deterministic formula below is shown for transparency.
   </div>
   <div style="font-size:10px;color:#6a737d;margin-bottom:12px">
-    &#9632; Det. Est. = deterministic formula &nbsp;·&nbsp;
-    <strong>Bold</strong> = highest signal &nbsp;·&nbsp;
-    +N% = complexity multiplier &nbsp;·&nbsp;
+    &#9632; Det. Est. = turns_h + lines_h + reads_h (deterministic formula) &nbsp;·&nbsp;
+    Lines = logic code only (.py/.ts/.go/… — HTML/CSS/JSON/MD excluded) &nbsp;·&nbsp;
     AI Est. = semantic AI analysis
   </div>
   <div style="overflow-x:auto">
