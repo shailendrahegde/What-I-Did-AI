@@ -72,7 +72,7 @@ _COLLAB_MODES = [
     ("Delegating",  "⚡",  "Git ops, config, installs, routine",      "#6a737d", False,
      ["Shipping", "Configuring", "Navigating"]),
     ("Course-correcting", "🔧",  "Errors, retries, course-correcting AI",   "#e65100", False,
-     ["Testing"]),
+     ["Testing", "Correcting"]),
 ]
 
 
@@ -179,7 +179,11 @@ def _agg(analyses: list, key: str) -> dict | None:
         if not proj:
             return ""
         parts = proj.strip("/").replace("\\", "/").split("/")
-        return "/".join(parts[:2]).lower()
+        key = "/".join(parts[:2]).lower()
+        # Normalize dashes/underscores/spaces so "frontier-firm" == "Frontier Firm"
+        import re as _re2
+        key = _re2.sub(r'[-_ ]+', '-', key)
+        return key
 
     def _merge_into(existing: dict, g: dict) -> None:
         existing["human_hours"] = round(
@@ -263,6 +267,14 @@ def _agg(analyses: list, key: str) -> dict | None:
     file_type_counts = _sum_dict("file_type_counts")
     quality_modes    = _sum_dict("quality_modes")
 
+    # Merge sample messages: pool across days, keep 8 longest per intent
+    sample_messages: dict = {}
+    for item in items:
+        for intent, msgs in (item.get("sample_messages") or {}).items():
+            sample_messages.setdefault(intent, []).extend(msgs)
+    for k in sample_messages:
+        sample_messages[k] = sorted(sample_messages[k], key=lambda m: -len(m["text"]))[:8]
+
     # Headline from last active day
     headline = next(
         (item.get("headline", "") for item in reversed(items) if item.get("headline")), ""
@@ -289,6 +301,7 @@ def _agg(analyses: list, key: str) -> dict | None:
         "time_buckets_all": time_buckets_all,
         "file_type_counts": file_type_counts,
         "quality_modes":    quality_modes,
+        "sample_messages":  sample_messages,
     }
 
 
@@ -510,6 +523,9 @@ def _goals_section(goals: list, source: str, show_date: bool = False, vid: str =
     accent_bg= ACCENT_BG.get(source, "#e8f2fb")
     rows     = []
     pfx      = f"{vid}-" if vid else ""   # unique prefix per view
+
+    # Sort by hours descending — must match _narrative_row sort so numbered items align
+    goals = sorted(goals, key=lambda g: -(g.get("human_hours") or 0))
 
     # Group into top-5 visible + rest collapsible
     for gi, g in enumerate(goals):
@@ -829,6 +845,10 @@ def _collab_section(data: dict, source: str, tool_name: str) -> str:
         "Delegating":        "e.g. git commit & push, update README, install packages, configure CI",
         "Course-correcting": "e.g. fix a wrong assumption, undo a bad change, redirect AI",
     }
+    # Map mode name → intents (mirrors _COLLAB_MODES)
+    _MODE_INTENTS = {n: intents for n, _, _, _, _, intents in _COLLAB_MODES}
+
+    sample_messages = data.get("sample_messages") or {}
 
     def _mode_card(name, icon, desc, color, high_val, mins, pct, hrs):
         if mins == 0:
@@ -838,6 +858,44 @@ def _collab_section(data: dict, source: str, tool_name: str) -> str:
         example = _MODE_EXAMPLES.get(name, "")
         example_html = (f'<div style="font-size:10px;color:#8a8a8a;font-style:italic;margin-top:3px">'
                         f'{_e(example)}</div>') if example else ""
+
+        # Gather samples for this mode's intents, sort by recency, take 3
+        mode_intents = _MODE_INTENTS.get(name, [name])
+        raw_samples = []
+        for intent in mode_intents:
+            raw_samples.extend(sample_messages.get(intent, []))
+        samples = sorted(raw_samples, key=lambda m: m.get("date", ""), reverse=True)[:3]
+
+        if samples:
+            card_id = f"{source}-{name.lower().replace(' ','').replace('-','')}-ex"
+            items_html = "".join(
+                f'<div style="padding:5px 0;border-bottom:1px solid #f4f4f4;'
+                f'display:flex;gap:10px;align-items:baseline">'
+                f'<span style="font-size:9px;color:#aaa;white-space:nowrap;min-width:38px">'
+                f'{m["date"][5:] if m.get("date") else ""}</span>'
+                f'<span style="font-size:11px;color:#444;font-style:italic">'
+                f'"{_e(m["text"][:80].rstrip())}{"…" if len(m["text"]) > 80 else ""}"'
+                f'</span></div>'
+                for m in samples
+            )
+            toggle_html = (
+                f'<div style="margin-top:8px">'
+                f'<button onclick="var d=document.getElementById(\'{card_id}\');'
+                f'var a=this.querySelector(\'.arr\');'
+                f'if(d.style.display===\'none\'){{d.style.display=\'block\';a.textContent=\'▼\'}}'
+                f'else{{d.style.display=\'none\';a.textContent=\'▶\'}};return false" '
+                f'style="background:none;border:none;cursor:pointer;font-size:10px;'
+                f'color:{color};padding:0;display:flex;align-items:center;gap:4px;'
+                f'font-family:inherit">'
+                f'<span class="arr">▶</span> From your sessions'
+                f'</button>'
+                f'<div id="{card_id}" style="display:none;margin-top:6px">'
+                f'{items_html}'
+                f'</div></div>'
+            )
+        else:
+            toggle_html = ""
+
         return (
             f'<div style="background:#fff;border:1px solid #dde1e7;border-radius:9px;'
             f'border-left:3px solid {color};padding:14px 16px;margin-bottom:10px">'
@@ -852,6 +910,7 @@ def _collab_section(data: dict, source: str, tool_name: str) -> str:
             f'<div style="font-size:11px;color:#6a737d">{_e(desc)} &nbsp;·&nbsp; '
             f'<strong style="color:#1b1f23">{_e(hrs_str)}</strong></div>'
             f'{example_html}'
+            f'{toggle_html}'
             f'</div>'
         )
 
@@ -1550,9 +1609,15 @@ def _source_view(view_id: str, data: dict | None, source: str,
     goals        = data.get("goals", [])
     hours        = data.get("human_hours", 0) or sum(g.get("human_hours") or 0 for g in goals)
     active_min_v = int(data.get("active_minutes", 0) or 0)
-    projects     = len({g.get("project","") for g in goals if g.get("project")})
+    def _norm_proj(p: str) -> str:
+        import re as _re3
+        return _re3.sub(r'[-_ ]+', '-', p.strip().lower()) if p else ""
+    projects     = len({_norm_proj(g.get("project","")) for g in goals if g.get("project")})
     sessions     = data.get("sessions_count", 0)
     headline     = data.get("headline", f"{tool_name} activity")
+
+    # Show year only in the banner sub-line (e.g. "2026")
+    _year_str = date_range_str[:4] if len(date_range_str) >= 4 else date_range_str
 
     header_row = f"""<tr>
   <td style="background:{banner_bg};border-radius:9px 9px 0 0;padding:22px 24px">
@@ -1562,7 +1627,7 @@ def _source_view(view_id: str, data: dict | None, source: str,
     </div>
     <div style="font-size:20px;font-weight:700;color:#fff;line-height:1.3">
       {_e(active_days)} active day{"s" if active_days!=1 else ""}
-      ({_e(date_range_str[:5] if len(date_range_str)>10 else date_range_str)}):
+      ({_e(_year_str)}):
       {_e(projects)} project{"s" if projects!=1 else ""} delivered
     </div>
   </td>

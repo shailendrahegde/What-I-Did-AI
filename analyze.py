@@ -500,6 +500,8 @@ def _compute_extra_metrics(sessions: list) -> dict:
     hourly_trivial: dict[int, int] = {h: 0 for h in range(24)}
     intent_counts:  dict[str, int] = {}
 
+    sample_messages: dict[str, list] = {}
+
     for s in sessions:
         for m in s.get("messages", []):
             if m.get("role") != "user":
@@ -514,6 +516,18 @@ def _compute_extra_metrics(sessions: list) -> dict:
                     pass
             intent = m.get("intent", "Building")
             intent_counts[intent] = intent_counts.get(intent, 0) + 1
+
+            # Collect sample messages per intent (skip trivially short ones)
+            text = m.get("text", "").strip()
+            if len(text) >= 20:
+                sample_messages.setdefault(intent, []).append({
+                    "text": text[:200],
+                    "date": ts[:10],
+                })
+
+    # Keep the 8 longest per intent (displayed sorted by recency)
+    for k in sample_messages:
+        sample_messages[k] = sorted(sample_messages[k], key=lambda m: -len(m["text"]))[:8]
         # Count trivial/approval messages per hour separately
         for ts in s.get("trivial_timestamps", []):
             try:
@@ -574,6 +588,7 @@ def _compute_extra_metrics(sessions: list) -> dict:
             for s in sessions
         ),
         "quality_modes":    quality_modes,
+        "sample_messages":  sample_messages,
     }
 
 
@@ -697,6 +712,7 @@ def analyze_day(
         result["total_files"]      = extra["total_files"]
         result["active_minutes"]   = extra["active_minutes"]
         result["quality_modes"]    = extra["quality_modes"]
+        result["sample_messages"]  = extra["sample_messages"]
         return result
 
     # Check cache

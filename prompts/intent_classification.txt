@@ -1,5 +1,5 @@
 # Intent Classification
-# Maps user message content to one of nine collaboration intent categories.
+# Maps user message content to one of ten collaboration intent categories.
 # Applied to the first 300 characters of each message.
 # Patterns are checked in priority order — first match wins.
 # Unmatched messages default to "Iterating".
@@ -8,12 +8,13 @@
 
 [intents]
 Shipping      | #cf222e | \b(commit|push|pr|pull.request|merge|deploy|ship|release|branch|tag)\b
-Investigating | #e65100 | \b(why does|why is|what.s going on|debug|diagnose|look at this error|what.s wrong|trace|root cause|broken|fails|failing|error|exception|issue|not working)\b
-Testing       | #1a7f37 | \b(test|run|execute|rerun|verify|validate|smoke|try it|does it work|assert|confirm)\b
-Researching   | #1a7f37 | \b(what.s the|how does|how do|are there|can i|cost|limit|explain|compare|difference|option|which|best way|recommend|what is)\b
+Investigating | #e65100 | \b(why does|why is|what.s going on|debug|diagnose|look at this error|what.s wrong|trace|root cause)\b
+Testing       | #1a7f37 | \b(test|run|execute|rerun|verify|validate|smoke|try it|does it work|assert)\b
+Researching   | #1a7f37 | \b(how does|how do|are there|cost|limit|explain|compare|difference|option|which is better|best way|recommend|what is|what are)\b
 Planning      | #8250df | \b(plan|propose|approach|strategy|phase|prioriti|outline|roadmap|next step|think about|before we|should we)\b
 Designing     | #7b1fa2 | \b(redesign|design|visual|layout|style|look like|look more|spacing|appearance|prototype|mockup|branding|rethink|different approach|organiz|arrange|the layout|the design)\b
 Configuring   | #6a737d | \b(config|configure|setting|enable|disable|turn on|turn off|parameter|env|environment|credential|auth|alias|install)\b
 Navigating    | #bf8700 | \b(open|find|search|list|show me|where is|navigate|look at|read|browse|display|what.s in)\b
 Building      | #0078d4 | \b(create|generate|implement|write|build|produce|initialize|scaffold|new feature|from scratch|set up|add new)\b
-Iterating     | #0969da | \b(fix|adjust|improve|refine|tweak|change|move|swap|resize|make it|slightly|update|modify|correct|revise|redo|clean|rename|remove|replace|add)\b
+Correcting    | #e65100 | \b(that.s (wrong|incorrect|not right)|not what i|you missed|you got it wrong|that.s not (right|correct|what i)|doesn.t look right|doesn.t seem right|please redo|redo that|revert|fix that|it.s broken|it.s wrong|it.s incorrect|wrong output|wrong result|that.s not|not quite right|almost but|not exactly|not what i (wanted|asked|meant|expected)|you (didn.t|haven.t|forgot|skipped)|i said|i asked for|i wanted)\b
+Iterating     | #0969da | \b(can you also|could you also|also (add|include|make|change|update|remove)|in addition|additionally|as well|and also|build on|extend|enhance|improve|take it further|add to (the|this|what)|expand (on|the|this)|iterate|make (it|this|the) better|polish|level up|now (also|let.s|can you)|based on (what|the|this)|following (on|up|that)|going back to|building on|on top of (that|this|what we)|fix|adjust|refine|tweak|change|move|swap|resize|make it|slightly|update|modify|correct|revise|clean|rename|remove|replace|add|what if|is it possible|could you|can you make|would it|how about)\b
