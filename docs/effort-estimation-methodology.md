@@ -24,7 +24,7 @@ by hand.
 
 ## 2. Research → Design Decisions
 
-### 2.1 "No single metric captures effort" → Multi-signal max() formula
+### 2.1 "No single metric captures effort" → Two complementary estimation systems
 
 Classic software effort estimation relies on size-oriented metrics — lines of
 code (LOC) and function points (FP). However:
@@ -41,23 +41,42 @@ code (LOC) and function points (FP). However:
   productivity requires measuring multiple dimensions: Satisfaction, Performance,
   Activity, Communication, and Efficiency.
 
-**Our response:** We take `max(tools, turns, active)` — each signal measures the
-same work from a different angle, and the strongest signal wins as the base. Lines
-of code are additive because coding output is independent work beyond research and
-iteration.
+**Our response:** We run two estimation systems in parallel, each addressing a
+different limitation of the other:
+
+| System | Approach | Strength | Limitation |
+|---|---|---|---|
+| **Deterministic formula** | `turns_h + lines_h + reads_h` — three additive log terms, no judgment | Transparent, reproducible, shown in report | Cannot see business value or work quality; treats all turns equally |
+| **AI semantic estimate** | Reads the full transcript; uses formula as a floor; applies expert billing judgment | Distinguishes boilerplate from design; sees iteration quality and outcome significance | Requires API; less reproducible |
+
+The deterministic formula is the **floor** — what the work was worth at minimum based on
+measurable counts. The AI estimate is the **primary output** — it reads what was actually
+accomplished and estimates what an expert firm would bill. The AI is explicitly instructed
+that its estimate should land at or above the formula floor.
 
 
-### 2.2 "LLMs provide 1.4–4× speed-ups" → Active time × 4 multiplier
+### 2.2 "LLMs provide 1.4–4× speed-ups" → Active time as primary AI anchor
 
 - **Cambon et al. (2023)** synthesised 30+ experiments and found that participants
   with Copilot tools completed tasks in 26–73% of the time (1.4× to 4× faster).
 
 - **Peng et al. (2023)** found that developers using GitHub Copilot completed a
-  programming task **55.8% faster** on average.
+  programming task **55.8% faster** on average (~2.3× speedup).
 
-**Our response:** `active_minutes × 4 / 60` converts active engagement time to
-human-equivalent hours. The 4× multiplier reflects the upper bound of observed
-speed-ups, capturing the full productivity gain that AI provides.
+**Our response:** Active engagement time is the primary real-world anchor for AI
+estimation. A professional who was actively engaged for 90 minutes directing AI
+produced 2–6 hours of human-equivalent work, depending on the nature of that
+engagement:
+
+| Work type | Speedup applied | Rationale |
+|---|---|---|
+| Mechanical execution (deploy, config, git ops) | 1.4× (lower bound) | Routine; AI provides modest leverage |
+| Implementation (feature building, code editing) | 2–3× (midpoint) | Standard productivity gain |
+| Design, research, debugging, decision-making | 3–4× (upper bound) | Expert judgment is the scarce resource AI amplifies most |
+
+Active time is used by the **AI estimator** as its primary anchor, not by the
+deterministic formula (which uses turns and lines instead, as they are more
+directly countable from session data).
 
 
 ### 2.3 "78% of 'complex' tasks done in <25% effort; 22% of 'simple' tasks took >180%" → Task-type classification with caps
@@ -84,7 +103,7 @@ interaction signal. Premium requests (Copilot) are capped at 10× conversation
 turns to prevent automated completions from inflating estimates.
 
 
-### 2.5 "Iteration count and prompt efficiency predict true complexity" → Iteration depth multiplier
+### 2.5 "Iteration count and prompt efficiency predict true complexity" → AI qualitative judgment
 
 - **Chen et al. (2023)** introduced "prompt efficiency" — measuring how many
   interactions were needed before the AI produced a correct solution — as an
@@ -93,18 +112,21 @@ turns to prevent automated completions from inflating estimates.
 - **Alaswad et al. (2026)** identified **iterative reasoning cycles** as one of
   five key dimensions driving effort in LLM-assisted work.
 
-**Our response:** `iteration_depth` (average edits per file) and
-`conversation_turns` both contribute complexity multipliers:
+**Our response:** Iteration depth is reflected in two ways depending on the
+estimation system:
 
-| Signal | Threshold | Multiplier |
-|--------|-----------|------------|
-| Conversation turns > 15 | Moderate iteration | +15% |
-| Conversation turns > 40 | Heavy iteration | +35% cumulative |
-| Iteration depth > 5 edits/file | Debugging/refinement | +15% |
-| Iteration depth > 12 edits/file | Extensive rework | +35% cumulative |
+- **Deterministic formula:** The logarithmic turns scale inherently captures diminishing
+  returns. Heavy iteration (many turns on the same files) is already embedded in
+  `turns_h` — applying additional percentage multipliers on top degraded accuracy in
+  30-day calibration testing (they over-inflated estimates for high-turn sessions).
+
+- **AI semantic estimator:** The AI reads the actual transcript and applies a qualitative
+  upward adjustment when it observes significant rework, course-correction, or debugging
+  cycles — typically +25–50% on the base estimate for heavily iterative sessions. This
+  is judgment-based, not mechanical.
 
 
-### 2.6 "Broader scope projects have significantly larger effort overruns" → Files-touched multiplier
+### 2.6 "Broader scope projects have significantly larger effort overruns" → AI qualitative judgment
 
 - **Morcov et al. (2020)** found that projects with more moving parts had
   significantly larger effort overruns.
@@ -112,13 +134,15 @@ turns to prevent automated completions from inflating estimates.
 - **Tregubov et al. (2017)** measured that engineers working across multiple
   contexts spent **17% of their time** recovering from context switches.
 
-**Our response:** `files_touched_count` adjusts the estimate upward:
+**Our response:** Scope breadth informs AI judgment, not the deterministic formula:
 
-| Files touched | Multiplier |
-|---|---|
-| ≤ 3 | 1.0× |
-| 4–10 | 1.1× |
-| 11+ | 1.3× |
+- **Deterministic formula:** `files_touched` was tested in 30-day marginal R² analysis
+  and added only +0.00–0.03 R² beyond the three-signal base. It is tracked in session
+  metrics for display but excluded from the deterministic formula.
+
+- **AI semantic estimator:** When the transcript shows a session touching 10+ files
+  across multiple systems, the AI applies a +20–30% upward adjustment for coordination
+  and integration overhead — consistent with Morcov and Tregubov findings.
 
 
 ### 2.7 "Not all lines are equal" → Logic lines only; boilerplate excluded
@@ -230,17 +254,56 @@ would otherwise be underestimated by the turns+lines formula alone:
 
 Grounded in the **Hybrid Intelligence Effort** framework (Alaswad et al. 2026):
 
-| # | Dimension | Our proxy | In formula |
+| # | Dimension | Deterministic formula proxy | AI estimator proxy |
 |---|---|---|---|
-| 1 | LLM reasoning complexity | `conversation_turns` (log-scaled) | `turns_h` |
-| 2 | Context completeness | File reads + grep/glob/search tool calls | `reads_h` |
-| 3 | Transformation scope | `lines_logic` (logic code files only — not HTML/CSS/JSON/MD) | `lines_h` |
-| 4 | Iterative reasoning cycles | `conversation_turns` depth (captured by same log curve) | `turns_h` |
-| 5 | Human oversight effort | `active_minutes` relative to wall-clock time | speed multiplier |
+| 1 | LLM reasoning complexity | `turns_h` — log-scaled conversation turns | Turns + transcript quality assessment |
+| 2 | Context completeness | `reads_h` — file reads + grep/glob/search calls | Reads + AI's reading of what was investigated |
+| 3 | Transformation scope | `lines_h` — logic code only (not HTML/CSS/JSON/MD) | Logic lines + assessment of design decisions made |
+| 4 | Iterative reasoning cycles | Embedded in `turns_h` log curve | Qualitative rework/iteration premium (+25–50%) |
+| 5 | Human oversight effort | Speed multiplier display only | `active_minutes × 2–4` as primary anchor |
 
 ---
 
-## 4. The Complete Formula
+## 4. The Two Estimation Systems
+
+### 4A. AI Semantic Estimate (primary output)
+
+The AI reads the full session transcript — every instruction, every tool action,
+every file change — and estimates what a skilled expert firm would bill for the
+same outcome without AI assistance. It uses the deterministic formula as a
+**floor**: its estimate should land at or above what the formula produces, never
+below.
+
+**AI estimation logic (in priority order):**
+
+1. **Active time as anchor:** `active_minutes × 2–4` gives the plausible range.
+   Work type determines the multiplier — routine execution at 2×, design and
+   decision-making at 3–4×.
+
+2. **Turns and transcript depth:** Each substantive turn represents real expert
+   thinking. The AI uses the outcome-anchored scale (9–15 turns → 1.5h,
+   31–60 → 3–5h, 61–100 → 5–8h) rather than the log formula, because the AI
+   can also assess *quality* of turns — a 30-turn session on a hard architecture
+   problem is worth more than 30 turns of copy-paste instructions.
+
+3. **Logic lines, excluding boilerplate:** Logic code output contributes ~1h per
+   100 lines at expert writing speed (80–130 LoC/hr). HTML/CSS/JSON/MD are excluded.
+
+4. **Read/search calls:** Heavy read sessions (+40 reads) add 0.5–1h for the
+   investigation and navigation effort.
+
+5. **Qualitative upward adjustments:**
+   - Significant rework or debugging cycles: +25–50%
+   - Broad scope (10+ files, multiple systems): +20–30%
+   - Architecturally significant decisions with lasting impact: scale toward upper anchors
+   - Mechanical execution only: cap at 0.25–0.5h regardless of other signals
+
+6. **Task-type caps:** Mechanical tasks (install, deploy, git push, copy files) are
+   always capped at 0.25–0.5h regardless of how many turns or reads they generated.
+
+---
+
+### 4B. Deterministic Formula (transparency floor)
 
 **In plain English:** The formula asks three questions and adds the answers together.
 
@@ -310,8 +373,9 @@ sessions (50 matched goal-level records). The `reads_h` term was added after 30-
 marginal R² analysis (48 records) showed `read_calls` was the only signal that
 consistently improved R² (+0.05) beyond the two-term base formula. The best
 achievable R² with countable signals is ~0.40 per goal and ~0.55 per day — the
-remaining variance reflects the AI's semantic judgment about business value and
-context quality, which raw counts cannot capture.
+remaining ~0.45–0.60 of variance is explained by the AI's semantic judgment about
+business value, work quality, and context, which raw counts cannot capture. This is
+why the AI estimate is the primary output and the formula is the floor.
 
 ---
 
