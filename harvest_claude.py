@@ -168,9 +168,28 @@ def _extract_tool_calls_from_content(content) -> list[str]:
     return summaries
 
 
-def _extract_lines_from_tool(tool_name: str, inp: dict, current_line_counts: dict) -> int:
-    """Estimate lines added from Edit/Write tool calls."""
-    added = 0
+# Extensions that represent hand-written logic a human expert would need to author.
+# Everything else (HTML, CSS, JSON, Markdown, data files) is treated as boilerplate —
+# generated or templated content that AI produces cheaply but which a human wouldn't
+# hand-write line-by-line either.
+_LOGIC_EXTS = {
+    ".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs", ".java", ".cs",
+    ".cpp", ".c", ".h", ".hpp", ".sh", ".bash", ".zsh", ".ps1", ".rb",
+    ".php", ".r", ".sql", ".kt", ".swift", ".dart", ".scala", ".ex", ".exs",
+    ".vue", ".svelte", ".tf", ".hcl",
+}
+
+
+def _classify_lines(tool_name: str, inp: dict, current_line_counts: dict) -> tuple[int, int]:
+    """Return (logic_lines_added, boilerplate_lines_added) for an Edit/Write tool call.
+
+    Logic lines come from files with code extensions (.py, .js, .ts, …).
+    Boilerplate lines come from everything else (.html, .css, .json, .md, …).
+    Edit tool calls are assumed to be targeted logic changes regardless of extension.
+    Write tool calls are classified by file extension.
+    """
+    logic = boilerplate = 0
+
     if tool_name == "Write":
         path = inp.get("file_path", "")
         content = inp.get("content", "")
@@ -178,8 +197,13 @@ def _extract_lines_from_tool(tool_name: str, inp: dict, current_line_counts: dic
         old_count = current_line_counts.get(path, 0)
         delta = new_count - old_count
         if delta > 0:
-            added = delta
+            ext = Path(path).suffix.lower() if path else ""
+            if ext in _LOGIC_EXTS:
+                logic = delta
+            else:
+                boilerplate = delta
         current_line_counts[path] = new_count
+
     elif tool_name == "Edit":
         old_str = inp.get("old_string", "")
         new_str = inp.get("new_string", "")
@@ -187,8 +211,10 @@ def _extract_lines_from_tool(tool_name: str, inp: dict, current_line_counts: dic
         new_lines = new_str.count("\n") + 1 if new_str else 0
         delta = new_lines - old_lines
         if delta > 0:
-            added = delta
-    return added
+            # Edit = targeted in-place change; always counts as logic regardless of file type
+            logic = delta
+
+    return logic, boilerplate
 
 
 def get_sessions_for_date(target_date: str) -> list:
@@ -270,6 +296,8 @@ def _parse_session_file(jsonl_path: Path, target_date: str, project_name: str, s
     git_repos     = []
     pull_requests = []
     lines_added   = 0
+    lines_logic   = 0   # lines in code files (.py/.js/.ts/…) — used in effort formula
+    lines_boilerplate = 0  # lines in generated/template files (.html/.css/.md/…)
     files_touched = set()
     session_start = None
     session_end   = None
@@ -372,9 +400,11 @@ def _parse_session_file(jsonl_path: Path, target_date: str, project_name: str, s
                 if path:
                     files_touched.add(str(Path(path).name))
 
-                # Count lines added
-                added = _extract_lines_from_tool(tool_name, inp, current_line_counts)
-                lines_added += added
+                # Count lines added, split by logic vs boilerplate
+                lg, bp = _classify_lines(tool_name, inp, current_line_counts)
+                lines_added += lg + bp
+                lines_logic += lg
+                lines_boilerplate += bp
 
                 # Detect git/PR operations from Bash commands
                 if tool_name == "Bash":
@@ -411,7 +441,9 @@ def _parse_session_file(jsonl_path: Path, target_date: str, project_name: str, s
         "git_repos":      git_repos,
         "git_ops":        git_ops,
         "pull_requests":  pull_requests,
-        "lines_added":    lines_added,
+        "lines_added":        lines_added,
+        "lines_logic":        lines_logic,
+        "lines_boilerplate":  lines_boilerplate,
         "lines_removed":  0,
         "files_touched":  sorted(files_touched),
         "tool_invocations":    sum(len(m.get("tools_after", [])) for m in messages if m["role"] == "user"),

@@ -11,6 +11,29 @@ from pathlib import Path
 
 SESSION_DIR = Path.home() / ".copilot" / "session-state"
 
+# Extensions that represent hand-written logic (mirrors harvest_claude.py)
+_LOGIC_EXTS = {
+    ".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs", ".java", ".cs",
+    ".cpp", ".c", ".h", ".hpp", ".sh", ".bash", ".zsh", ".ps1", ".rb",
+    ".php", ".r", ".sql", ".kt", ".swift", ".dart", ".scala", ".ex", ".exs",
+    ".vue", ".svelte", ".tf", ".hcl",
+}
+
+
+def _split_lines_by_type(files_modified: set, total_lines: int) -> tuple[int, int]:
+    """Estimate (logic_lines, boilerplate_lines) from the set of modified filenames.
+
+    Copilot only reports total linesAdded, not per-file counts.  We infer the split
+    by calculating what fraction of modified files are logic files and applying that
+    fraction to the total line count.
+    """
+    if not files_modified or total_lines <= 0:
+        return 0, 0
+    logic_files = sum(1 for f in files_modified if Path(f).suffix.lower() in _LOGIC_EXTS)
+    frac = logic_files / len(files_modified)
+    logic = round(total_lines * frac)
+    return logic, total_lines - logic
+
 _APPROVALS = {
     "yes", "y", "yep", "yeah", "yup", "no", "n", "nope",
     "ok", "okay", "sure", "fine", "right", "correct",
@@ -222,6 +245,7 @@ def get_sessions_for_date(target_date: str) -> list:
         all_modified   = shutdown_files | files_touched
         lines_added    = code_changes.get("linesAdded", 0)
         lines_removed  = code_changes.get("linesRemoved", 0)
+        lines_logic, lines_boilerplate = _split_lines_by_type(all_modified, lines_added)
 
         user_messages = [m for m in messages if m["role"] == "user"]
         if not user_messages:
@@ -246,8 +270,10 @@ def get_sessions_for_date(target_date: str) -> list:
             "session_end":       session_end,
             "git_repos":         git_repos,
             "git_ops":           git_ops_list,
-            "lines_added":       lines_added,
-            "lines_removed":     lines_removed,
+            "lines_added":        lines_added,
+            "lines_logic":        lines_logic,
+            "lines_boilerplate":  lines_boilerplate,
+            "lines_removed":      lines_removed,
             "workspace_summary": workspace.get("summary", ""),
             "tool_invocations":   sum(len(m.get("tools_after", [])) for m in messages if m["role"] == "user"),
             "files_touched":      sorted(all_modified),

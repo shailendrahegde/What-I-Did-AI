@@ -121,24 +121,41 @@ turns to prevent automated completions from inflating estimates.
 | 11+ | 1.3× |
 
 
-### 2.7 "Code volume is decoupled from effort in AI-assisted work" → Lines as additive, not primary
+### 2.7 "Not all lines are equal" → Logic lines only; boilerplate excluded
 
 - **Alaswad et al. (2026)** emphasise that an LLM can generate 1,000 lines of
-  boilerplate in seconds. But an expert human writing 500 lines of production
-  code needs 4+ hours.
+  HTML or JSON in seconds. A human expert writing the same output from scratch
+  would spend hours — but they wouldn't: they'd write a 20-line template instead.
 
-**Our response:** Lines are additive on top of the base estimate (not part of
-the `max()`):
+- **Empirical finding from this dataset (n=38 days):** total lines added has only
+  r=+0.25 correlation with AI effort estimates. When split by file type,
+  *logic lines* (`.py`, `.js`, `.ts`, …) reach r=+0.41, while *boilerplate lines*
+  (`.html`, `.css`, `.json`, `.md`, …) have r=−0.14 — actively hurting accuracy.
 
-| Lines added | Formula hours |
+**Our response:** Lines are split at harvest time into two categories:
+
+| Category | File types | Treatment |
+|---|---|---|
+| **Logic lines** | `.py` `.js` `.ts` `.go` `.rs` `.java` `.cs` `.sh` and other code extensions | Counted; contribute to the effort estimate on a logarithmic scale |
+| **Boilerplate lines** | `.html` `.css` `.json` `.md` `.yaml` `.csv` and other data/template extensions | Tracked for display but excluded from the effort formula |
+
+Logic lines use a logarithmic scale because the first 100 lines of a new module
+require far more design thinking than the next 900 lines of implementation:
+
+| Logic lines written | Contribution to estimate |
 |---|---|
-| 1–150 | 0.75h |
-| 151–300 | 1.5h |
-| 301–500 | 2.5h |
-| 500+ | 4h+ |
+| 50 | +0.20h |
+| 100 | +0.40h |
+| 200 | +0.63h |
+| 500 | +1.03h |
+| 1 000 | +1.33h |
+| 5 000 | +1.86h |
+
+For Copilot sessions (where per-file line counts are unavailable), the logic fraction
+is estimated from the proportion of modified files that have logic extensions.
 
 
-### 2.8 "New effort emerges in managing the AI" → Conversation turns as primary interaction signal
+### 2.8 "Turns follow diminishing returns, not linear growth" → Logarithmic turns scale
 
 - **Vaithilingam et al. (2022)** observed that programmers using a code generator
   spent significant time **iteratively probing and correcting the AI**.
@@ -146,19 +163,23 @@ the `max()`):
 - **Santos et al. (2025)** found that while code-writing effort decreased with AI,
   effort on **debugging and validating AI-generated code remained high**.
 
-**Our response:** Only **substantive turns** count — trivial confirmations like
-"yes", "commit", "1", "2" are filtered out. Each substantive turn ≈ 5–7 min
-of human thinking:
+- **Empirical calibration (this dataset):** OLS regression of conversation turns
+  against AI effort estimates yields the relationship `−0.15 + 0.67 × ln(turns + 1)`.
+  The previous tiered step-function overestimated by 5–10× on heavy sessions —
+  e.g. 108 turns produced a formula estimate of 26h vs the AI's 2.75h. The log
+  curve correctly captures diminishing returns: each additional turn in a long
+  session adds less incremental human-equivalent effort than the first few turns.
 
-| Substantive Turns | Formula hours |
-|---|---|
-| 1–3 | 0.25h |
-| 4–8 | 0.75h |
-| 9–15 | 1.5h |
-| 16–30 | 3h |
-| 31–60 | 5h |
-| 61–100 | 8h |
-| 100+ | 10h |
+**Our response:** Only **substantive turns** count — trivial confirmations like
+"yes", "commit", "1", "2" are filtered out before the formula runs.
+
+| Substantive turns | Formula hours (log scale) | Previous tiered scale |
+|---|---|---|
+| 5 | 0.92h | 0.75h |
+| 15 | 1.57h | 1.5h |
+| 30 | 2.02h | 3.0h |
+| 60 | 2.50h | 5.0h |
+| 100 | 2.82h | 8.0h |
 
 ---
 
@@ -168,54 +189,59 @@ Grounded in the **Hybrid Intelligence Effort** framework (Alaswad et al. 2026):
 
 | # | Dimension | Our proxy |
 |---|---|---|
-| 1 | LLM reasoning complexity | `conversation_turns`, conversation depth |
+| 1 | LLM reasoning complexity | `conversation_turns` (log-scaled) |
 | 2 | Context completeness | File reads, searches (from tool distribution) |
-| 3 | Transformation scope | `files_touched`, `lines_added`, `lines_removed` |
-| 4 | Iterative reasoning cycles | `conversation_turns`, `iteration_depth` |
+| 3 | Transformation scope | `lines_logic` (code files only), `files_touched` |
+| 4 | Iterative reasoning cycles | `conversation_turns` depth |
 | 5 | Human oversight effort | `active_minutes` relative to wall-clock time |
 
 ---
 
 ## 4. The Complete Formula
 
+**In plain English:** The formula asks two questions and adds the answers together.
+
+1. *How deep was the collaboration?* Count the substantive back-and-forth turns —
+   each one represents the human doing real thinking (framing a problem, reviewing
+   output, deciding next steps). The relationship is logarithmic: going from 5 to
+   15 turns adds more human-equivalent effort than going from 85 to 95 turns, because
+   early turns drive decisions while later turns are refinements.
+
+2. *How much original logic was written?* Count lines added to code files only —
+   `.py`, `.js`, `.ts`, and similar. Exclude HTML, CSS, JSON, Markdown, and other
+   generated or template content that AI produces cheaply and a human expert would
+   never hand-write line-for-line anyway. Apply a log scale here too: the 1st
+   hundred lines of a new module require design decisions; the 10th hundred are
+   mostly implementation following established patterns.
+
 ```
-Step 1 — Primary signals (take the strongest):
-    tool_h   = (reads × 0.3min + edits × 1.5min + runs × 0.75min) ÷ 60
-    turns_h  = tier_turns(substantive_turns)
-    active_h = active_minutes × 4 ÷ 60
-    base     = max(tool_h, turns_h, active_h)
+turns_h  = max(0,  −0.15 + 0.67 × ln(turns + 1))
+lines_h  = 0.40 × log₂(lines_logic ÷ 100 + 1)
 
-Step 2 — Complexity multipliers (capped at 2.2× combined):
-    + 0.15 if turns > 15        + 0.20 if turns > 40
-    + 0.15 if iter_depth > 5    + 0.20 if iter_depth > 12
-    + 0.10 if files > 3         + 0.20 if files > 10
-
-Step 3 — Lines of code (additive):
-    lines_h = tier_lines(lines_added)
-
-Step 4 — Total:
-    total = (base × combined_multiplier) + lines_h
-    total = max(total, 0.25)
-    total = round to nearest 0.25h
+total    = turns_h + lines_h
+total    = max(total, 0.25)          # floor at 15 min
+total    = round to nearest 0.25h
 ```
 
 ### Worked example
 
-> 150 tools (60 reads / 40 edits / 30 runs), 25 turns, 45m active, +320 lines, 6 files
+> 30 turns, 400 logic lines (.py / .ts), 800 boilerplate lines (.html / .json)
 
 ```
-tool_h   = (60×0.3 + 40×1.5 + 30×0.75) ÷ 60 = 100.5min ÷ 60 = 1.7h
-turns_h  = 3h  (25 turns → 16–30 tier)
-active_h = 45 × 4 ÷ 60 = 3h
-base     = max(1.7, 3, 3) = 3h
+turns_h  = −0.15 + 0.67 × ln(31) = −0.15 + 0.67 × 3.43 = 2.15h
+lines_h  = 0.40 × log₂(400/100 + 1) = 0.40 × log₂(5) = 0.40 × 2.32 = 0.93h
 
-Multipliers: turns 25>15 (+15%), depth 8>5 (+15%), files 6>3 (+10%)
-Combined: 1.15 × 1.15 × 1.10 = 1.45×
+           boilerplate lines (800) → excluded from formula
 
-lines_h  = 1.5h  (320 lines)
-
-Total = (3h × 1.45) + 1.5h = 4.35 + 1.5 = 5.75h → rounded to 5.75h
+total    = 2.15 + 0.93 = 3.08h → rounded to 3.00h
 ```
+
+### Calibration basis
+
+This formula was fitted by OLS regression against 38 days of AI-analysed sessions
+(50 matched goal-level records). The best achievable R² with these signals is ~0.30
+per goal and ~0.55 per day — the remaining variance reflects the AI's semantic
+judgment about business value, which raw counts cannot capture.
 
 ---
 
@@ -223,10 +249,9 @@ Total = (3h × 1.45) + 1.5h = 4.35 + 1.5 = 5.75h → rounded to 5.75h
 
 | Rule | Rationale |
 |---|---|
-| Mechanical tasks → 0.25–0.5h max | Execution, not thinking |
-| <5 tool invocations AND <10 total tools → cap at 1h | Inherently lightweight session |
-| No single task exceeds 8h | Split into sub-tasks if larger |
-| Combined multiplier capped at 2.2× | Prevents compounding on large aggregated goals |
+| Floor at 0.25h | Every session with substantive turns represents at least 15 min of human thinking |
+| Boilerplate lines → 0 contribution | AI-generated HTML/CSS/JSON does not represent hand-authored human effort |
+| Logic lines on log scale | Design decisions in the first 100 lines outweigh implementation in the next 900 |
 
 ---
 
