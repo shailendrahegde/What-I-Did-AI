@@ -79,13 +79,22 @@ _COLLAB_MODES = [
 # ── Effort-estimation helpers (deterministic formula) ─────────────────────────
 # Formula (OLS-calibrated, R²≈0.40 per goal on 48 days of data):
 #   turns_h = max(0, -0.15 + 0.67 × ln(turns + 1))
-#   lines_h = 0.40 × log₂(lines_logic / 100 + 1)   [logic code only — .py/.ts/.go/…]
-#   reads_h = 0.10 × log₂(read_calls + 1)           [file reads + grep/glob/search]
-#   total   = max(turns_h + lines_h + reads_h, 0.25), rounded to 0.25h
+#   reqs_h  = max(0, -0.10 + 0.45 × ln(reqs + 1))   [fallback when turns == 0]
+#   lines_h = 0.40 × log₂(lines_logic / 100 + 1)    [logic code only — .py/.ts/.go/…]
+#   reads_h = 0.10 × log₂(read_calls + 1)            [file reads + grep/glob/search]
+#   tools_h = 0.07 × log₂(tool_invocations + 1)      [execution work — browser, commands, images]
+#   interaction_h = turns_h if turns > 0 else reqs_h
+#   total   = max(interaction_h + lines_h + reads_h + tools_h, 0.25), rounded to 0.25h
 import math as _math
 
 def _turns_h(turns: int) -> float:
     return max(0.0, -0.15 + 0.67 * _math.log1p(turns))
+
+
+def _reqs_h(reqs: int) -> float:
+    """Fallback when turns == 0. Lower coefficient — premium reqs include automated completions."""
+    if reqs <= 0: return 0.0
+    return max(0.0, -0.10 + 0.45 * _math.log1p(reqs))
 
 
 def _lines_h(lines_logic: int) -> float:
@@ -98,9 +107,27 @@ def _reads_h(read_calls: int) -> float:
     return 0.10 * _math.log2(read_calls + 1)
 
 
-def _det_est(turns: int, lines_logic: int, read_calls: int) -> float:
-    total = _turns_h(turns) + _lines_h(lines_logic) + _reads_h(read_calls)
-    return max(0.25, round(total * 4) / 4)
+def _tools_h(n: int) -> float:
+    """Total tool invocations → hours. Low coefficient avoids double-counting reads/edits
+    for coding tasks; provides +0.25–0.60h for non-coding tasks where lines_h ≈ 0."""
+    if n <= 0: return 0.0
+    return 0.07 * _math.log2(n + 1)
+
+
+def _det_est(turns: int, lines_logic: int, read_calls: int,
+             tool_invocations: int = 0, reqs: int = 0) -> dict:
+    """Return a dict with all formula components and the rounded total."""
+    th = _turns_h(turns)
+    rqh = _reqs_h(reqs)
+    interaction_h = th if turns > 0 else rqh
+    lh  = _lines_h(lines_logic)
+    rh  = _reads_h(read_calls)
+    toh = _tools_h(tool_invocations)
+    total = max(0.25, round((interaction_h + lh + rh + toh) * 4) / 4)
+    return {
+        "turns_h": th, "reqs_h": rqh, "interaction_h": interaction_h,
+        "lines_h": lh, "reads_h": rh, "tools_h": toh, "total": total,
+    }
 
 
 DOMAIN_PILL_BG = "#fff3e0"
@@ -1270,17 +1297,17 @@ def _evidence_section(data: dict, accent: str, vid: str = "") -> str:
         edits      = s.get("edits", 0)
         runs       = s.get("runs", 0)
         turns      = s.get("conversation_turns", 0)
-        lines_lg   = s.get("lines_logic", s.get("lines_added", 0))   # prefer logic lines; fall back for old cache
+        lines_lg   = s.get("lines_logic", s.get("lines_added", 0))
         lines_bp   = s.get("lines_boilerplate", 0)
         files      = s.get("files_touched", 0)
         act_m      = s.get("active_minutes", 0.0)
         itr        = round(edits / max(files, 1), 1) if files else edits
         read_calls = reads + searches
+        tool_inv   = s.get("tool_invocations", read_calls + edits + runs)
+        day_reqs   = data.get("premium_requests", 0)
 
-        th = _turns_h(turns)
-        lh = _lines_h(lines_lg)
-        rh = _reads_h(read_calls)
-        det = _det_est(turns, lines_lg, read_calls)
+        est = _det_est(turns, lines_lg, read_calls, tool_inv, day_reqs)
+        det = est["total"]
         total_det += det
 
         # Match to an AI estimate from goals
@@ -1292,7 +1319,7 @@ def _evidence_section(data: dict, accent: str, vid: str = "") -> str:
             total_ai_est += ai_est
 
         proj_rows.append((proj, reads, searches, edits, runs, turns, lines_lg, lines_bp,
-                          files, itr, act_m, th, lh, rh, read_calls, det, ai_est))
+                          files, itr, act_m, tool_inv, est, det, ai_est))
 
     # ── Table header ────────────────────────────────────────────────────────
     th_style = (f'style="padding:5px 8px;font-size:9px;font-weight:700;color:{accent};'
@@ -1320,10 +1347,14 @@ def _evidence_section(data: dict, accent: str, vid: str = "") -> str:
 
     table_rows = ""
     for (proj, reads, searches, edits, runs, turns, lines_lg, lines_bp,
-         files, itr, act_m, th, lh, rh, read_calls, det, ai_est) in proj_rows:
+         files, itr, act_m, tool_inv, est, det, ai_est) in proj_rows:
+
+        th   = est["turns_h"];  rqh = est["reqs_h"]
+        lh   = est["lines_h"];  rh  = est["reads_h"];  toh = est["tools_h"]
+        inh  = est["interaction_h"]
 
         tools_breakdown = (f'<div style="font-size:9px;color:#6a737d;margin-top:2px">'
-                           f'{read_calls}r · {edits}e · {runs}x</div>')
+                           f'{reads + searches}r · {edits}e · {runs}x</div>')
         ai_cell    = _fmt_h(ai_est) if ai_est is not None else "—"
         lines_disp = f"+{lines_lg:,}" if lines_lg >= 0 else f"{lines_lg:,}"
         if lines_bp:
@@ -1332,12 +1363,15 @@ def _evidence_section(data: dict, accent: str, vid: str = "") -> str:
         files_disp = str(files) if files else "—"
         itr_disp   = str(itr)   if files else "—"
 
+        int_label = f"turns {_fmt_h(th)}" if turns > 0 else f"reqs {_fmt_h(rqh)}"
+        formula_parts = f"{int_label} + lines {_fmt_h(lh)} + reads {_fmt_h(rh)} + tools {_fmt_h(toh)}"
+
         table_rows += f"""<tr style="border-bottom:1px solid #f0f2f5">
   <td style="padding:8px 8px;vertical-align:top;font-size:11px;font-weight:600;color:#1b1f23;max-width:200px">
     {_e(proj)}
     {tools_breakdown}
   </td>
-  <td style="padding:8px 8px;text-align:center;font-size:12px;font-weight:700;color:#1b1f23;vertical-align:top">{read_calls + edits + runs}</td>
+  <td style="padding:8px 8px;text-align:center;font-size:12px;font-weight:700;color:#1b1f23;vertical-align:top">{tool_inv}</td>
   <td style="padding:8px 8px;text-align:center;font-size:11px;color:#6a737d;vertical-align:top">{act_disp}</td>
   <td style="padding:8px 8px;text-align:center;font-size:11px;color:#6a737d;vertical-align:top">{lines_disp}</td>
   <td style="padding:8px 8px;text-align:center;font-size:11px;color:#6a737d;vertical-align:top">{turns}</td>
@@ -1350,9 +1384,7 @@ def _evidence_section(data: dict, accent: str, vid: str = "") -> str:
 </tr>
 <tr style="border-bottom:1px solid #e8eaf0;background:#fafbfc">
   <td style="padding:2px 8px 6px;font-size:9px;color:#6a737d">formula components</td>
-  <td colspan="3" style="padding:2px 8px 6px;font-size:9px;color:#6a737d">
-    turns {_fmt_h(th)} + logic&nbsp;lines {_fmt_h(lh)} + reads {_fmt_h(rh)}
-  </td>
+  <td colspan="3" style="padding:2px 8px 6px;font-size:9px;color:#6a737d">{formula_parts}</td>
   <td colspan="5" style="padding:2px 8px 6px;text-align:right;font-size:10px;font-weight:700;color:{accent}">{_fmt_h(det)}</td>
 </tr>"""
 
@@ -1372,13 +1404,14 @@ def _evidence_section(data: dict, accent: str, vid: str = "") -> str:
 </div>
 <div id="{meth_id}-tasks" style="display:none;margin-top:4px">
   <div style="font-size:12px;color:{accent};font-family:monospace;background:#f0f2f5;padding:8px 12px;border-radius:6px;margin-bottom:6px">
-    total = turns_h + lines_h + reads_h
+    total = interaction_h + lines_h + reads_h + tools_h
   </div>
   <div style="font-size:11px;color:#6a737d;margin-bottom:10px;line-height:1.6">
-    Three questions, added together:
-    <strong>How deep was the collaboration?</strong> (turns — logarithmic: early turns count more than late ones)&nbsp;&nbsp;+&nbsp;&nbsp;
+    Four signals, added together:
+    <strong>How deep was the collaboration?</strong> (turns log curve — or premium requests as fallback when turn data unavailable)&nbsp;&nbsp;+&nbsp;&nbsp;
     <strong>How much logic code was written?</strong> (lines in .py/.ts/.go/… — <em>not</em> HTML/CSS/JSON/MD)&nbsp;&nbsp;+&nbsp;&nbsp;
-    <strong>How much investigation happened?</strong> (file reads + grep/glob/search calls — captures research and analysis with no code output)
+    <strong>How much investigation happened?</strong> (file reads + grep/glob/search — captures research with no code output)&nbsp;&nbsp;+&nbsp;&nbsp;
+    <strong>How much execution work ran?</strong> (total tool invocations — browser automation, commands, image processing, non-coding tasks)
   </div>
   <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dde1e7;border-radius:7px;overflow:hidden;margin-bottom:10px">
     <thead><tr style="background:#e8f2fb">
@@ -1393,18 +1426,28 @@ def _evidence_section(data: dict, accent: str, vid: str = "") -> str:
         <td style="padding:5px 10px;font-size:11px;color:#6a737d">5t→0.9h &nbsp;15t→1.6h &nbsp;30t→2.0h &nbsp;60t→2.5h &nbsp;100t→2.8h</td>
       </tr>
       <tr style="background:#fafbfc">
+        <td style="padding:5px 10px;font-size:11px;font-weight:600">reqs_h <span style="font-size:9px;color:#6a737d">[fallback when turns=0]</span></td>
+        <td style="padding:5px 10px;font-size:11px;color:#6a737d;font-family:monospace">max(0, &minus;0.10 + 0.45 &times; ln(reqs+1))</td>
+        <td style="padding:5px 10px;font-size:11px;color:#6a737d">3→0.52h &nbsp;8→0.89h &nbsp;15→1.16h &nbsp;30→1.44h &nbsp;60→1.75h</td>
+      </tr>
+      <tr>
         <td style="padding:5px 10px;font-size:11px;font-weight:600">lines_h</td>
         <td style="padding:5px 10px;font-size:11px;color:#6a737d;font-family:monospace">0.40 &times; log&#8322;(lines_logic&divide;100 + 1)</td>
         <td style="padding:5px 10px;font-size:11px;color:#6a737d">logic code only &mdash; .py .ts .go .rs .java .sh&hellip; &nbsp;|&nbsp; HTML/CSS/JSON/MD excluded &nbsp;|&nbsp; 100L→0.4h &nbsp;500L→1.0h &nbsp;2000L→1.6h</td>
       </tr>
-      <tr>
+      <tr style="background:#fafbfc">
         <td style="padding:5px 10px;font-size:11px;font-weight:600">reads_h</td>
         <td style="padding:5px 10px;font-size:11px;color:#6a737d;font-family:monospace">0.10 &times; log&#8322;(read_calls + 1)</td>
         <td style="padding:5px 10px;font-size:11px;color:#6a737d">file reads + grep/glob/search &nbsp;|&nbsp; 10→+0.35h &nbsp;50→+0.57h &nbsp;100→+0.67h</td>
       </tr>
+      <tr>
+        <td style="padding:5px 10px;font-size:11px;font-weight:600">tools_h</td>
+        <td style="padding:5px 10px;font-size:11px;color:#6a737d;font-family:monospace">0.07 &times; log&#8322;(tool_invocations + 1)</td>
+        <td style="padding:5px 10px;font-size:11px;color:#6a737d">all tool calls &nbsp;|&nbsp; 10→+0.24h &nbsp;50→+0.40h &nbsp;100→+0.47h &nbsp;200→+0.54h &nbsp;500→+0.63h</td>
+      </tr>
       <tr style="background:#fafbfc">
         <td style="padding:5px 10px;font-size:11px;font-weight:600;color:{accent}">total</td>
-        <td style="padding:5px 10px;font-size:11px;color:#6a737d;font-family:monospace">max(turns_h + lines_h + reads_h, 0.25h)</td>
+        <td style="padding:5px 10px;font-size:11px;color:#6a737d;font-family:monospace">max(interaction_h + lines_h + reads_h + tools_h, 0.25h)</td>
         <td style="padding:5px 10px;font-size:11px;color:#6a737d">floor 0.25h &nbsp;·&nbsp; rounded to nearest 0.25h &nbsp;·&nbsp; OLS-calibrated R²≈0.40 on 48 days</td>
       </tr>
     </tbody>
@@ -1427,8 +1470,9 @@ def _evidence_section(data: dict, accent: str, vid: str = "") -> str:
     The deterministic formula below is shown for transparency.
   </div>
   <div style="font-size:10px;color:#6a737d;margin-bottom:12px">
-    &#9632; Det. Est. = turns_h + lines_h + reads_h (deterministic formula) &nbsp;·&nbsp;
+    &#9632; Det. Est. = interaction_h + lines_h + reads_h + tools_h (deterministic formula) &nbsp;·&nbsp;
     Lines = logic code only (.py/.ts/.go/… — HTML/CSS/JSON/MD excluded) &nbsp;·&nbsp;
+    interaction_h = turns_h, or reqs_h when turns unavailable &nbsp;·&nbsp;
     AI Est. = semantic AI analysis
   </div>
   <div style="overflow-x:auto">

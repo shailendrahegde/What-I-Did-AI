@@ -95,26 +95,30 @@ RESEARCH FOUNDATION:
   (1.4–4× range). Use the nature of the work to pick within that range — routine tasks → lower end,
   design and decision-heavy work → upper end.
 - No single metric captures effort — use MULTIPLE signals together (SPACE framework, Forsgren 2021)
-- Three signals independently explain AI-assisted effort (OLS regression, 48 days):
+- Four signals independently explain AI-assisted effort (OLS regression, 48 days):
     1. Conversation turns  — each substantive turn represents real human thinking (framing, deciding, reviewing)
     2. Logic code lines    — only .py/.ts/.go/.rs/.java/.sh and similar; HTML/CSS/JSON/MD excluded
     3. Read/search calls   — file reads + grep/glob/search; captures investigation with no code output
+    4. Tool invocations    — total tool calls; captures execution work (browser, commands, images, documents)
+       where lines_h ≈ 0 (non-coding tasks). Low coefficient (0.07) avoids double-counting coding work.
+- Premium requests serve as fallback interaction signal when turn data is unavailable (older sessions)
 - Boilerplate lines (HTML/CSS/JSON/MD/YAML) correlate NEGATIVELY with effort (r=−0.14); logic lines r=+0.41
 
 Each session includes a SIGNALS block. USE IT to calibrate — do not ignore these numbers.
 
 THE FORMULA IS A FLOOR, NOT A CEILING.
-The deterministic formula (turns_h + lines_h + reads_h) gives the minimum plausible estimate
-based on mechanical counts. Your semantic judgment about the QUALITY of the work — what decisions
-were made, what expertise was required, what would an expert firm bill — should typically result
-in an estimate AT OR ABOVE the formula floor, not below it. The formula cannot see business value;
-you can.
+The deterministic formula (interaction_h + lines_h + reads_h + tools_h) gives the minimum plausible
+estimate based on mechanical counts. Your semantic judgment about the QUALITY of the work — what
+decisions were made, what expertise was required, what would an expert firm bill — should typically
+result in an estimate AT OR ABOVE the formula floor, not below it. The formula cannot see business
+value; you can.
 
 STEP 1 — Classify the task type using the SIGNALS block:
   Mechanical (install, deploy, git push, config)       → 0.25–0.5h regardless of other signals
   Research/Analysis (read-heavy tools, low edits)      → active_minutes × 2–3 is a good anchor
   Implementation (edit-heavy, logic lines added)        → logic lines ÷ 100 LoC/hr + research overhead
   Debugging (run-heavy, high iteration)                 → base + 50% premium for rework and validation
+  Non-coding work (browser, docs, images, no code out) → tool_invocations is the primary signal
   Complex multi-step (balanced reads+edits+runs)        → use highest signal as floor, apply judgment upward
 
 STEP 2 — Estimate from multiple signals and use the HIGHEST:
@@ -141,8 +145,14 @@ STEP 2 — Estimate from multiple signals and use the HIGHEST:
     File reads + grep/glob/search calls indicate exploration and research effort even with no code output.
     A session with 40+ reads required skilled navigation and judgment. Add 0.5–1h for read-heavy sessions.
 
-  Use the HIGHEST of (active_h, turns_h, lines_h) as your base, then add reads contribution.
-  Apply upward judgment for genuinely complex, decision-heavy, or architecturally significant work.
+  TOOL INVOCATIONS (non-coding work and execution breadth):
+    Total tool calls are the primary signal for tasks producing no code output: document synthesis,
+    image analysis, browser automation, presentation work, data processing. When lines_h ≈ 0 and
+    reads_h is low, tool_invocations tells you how much the AI was actually doing.
+    10 tools ≈ +0.25h  |  50 tools ≈ +0.40h  |  100 tools ≈ +0.50h  |  200 tools ≈ +0.55h
+
+  Use the HIGHEST of (active_h, turns_h, lines_h, tools-based estimate) as your base,
+  then add reads and tools contributions. Apply upward judgment for complex, decision-heavy work.
 
 STEP 3 — Apply complexity adjustments based on what you read in the transcript:
   Iteration and rework (many turns on same files, errors corrected)  → +25–50% on base

@@ -46,7 +46,7 @@ different limitation of the other:
 
 | System | Approach | Strength | Limitation |
 |---|---|---|---|
-| **Deterministic formula** | `turns_h + lines_h + reads_h` — three additive log terms, no judgment | Transparent, reproducible, shown in report | Cannot see business value or work quality; treats all turns equally |
+| **Deterministic formula** | `interaction_h + lines_h + reads_h + tools_h` — four additive log terms, no judgment | Transparent, reproducible, shown in report | Cannot see business value or work quality; treats all turns equally |
 | **AI semantic estimate** | Reads the full transcript; uses formula as a floor; applies expert billing judgment | Distinguishes boilerplate from design; sees iteration quality and outcome significance | Requires API; less reproducible |
 
 The deterministic formula is the **floor** — what the work was worth at minimum based on
@@ -250,17 +250,18 @@ would otherwise be underestimated by the turns+lines formula alone:
 
 ---
 
-## 3. The Five-Dimension Framework
+## 3. The Six-Dimension Framework
 
-Grounded in the **Hybrid Intelligence Effort** framework (Alaswad et al. 2026):
+Grounded in the **Hybrid Intelligence Effort** framework (Alaswad et al. 2026), extended with an execution breadth dimension:
 
 | # | Dimension | Deterministic formula proxy | AI estimator proxy |
 |---|---|---|---|
-| 1 | LLM reasoning complexity | `turns_h` — log-scaled conversation turns | Turns + transcript quality assessment |
+| 1 | LLM reasoning complexity | `turns_h` — log-scaled conversation turns; `reqs_h` as fallback | Turns + transcript quality assessment |
 | 2 | Context completeness | `reads_h` — file reads + grep/glob/search calls | Reads + AI's reading of what was investigated |
 | 3 | Transformation scope | `lines_h` — logic code only (not HTML/CSS/JSON/MD) | Logic lines + assessment of design decisions made |
 | 4 | Iterative reasoning cycles | Embedded in `turns_h` log curve | Qualitative rework/iteration premium (+25–50%) |
-| 5 | Human oversight effort | Speed multiplier display only | `active_minutes × 2–4` as primary anchor |
+| 5 | Tool execution breadth | `tools_h` — total tool invocations (log, low coefficient) | Tool count as proxy for non-coding task volume |
+| 6 | Human oversight effort | Speed multiplier display only | `active_minutes × 2–4` as primary anchor |
 
 ---
 
@@ -328,43 +329,63 @@ below.
    judgment to direct.
 
 ```
-turns_h  = max(0,  −0.15 + 0.67 × ln(turns + 1))
-lines_h  = 0.40 × log₂(lines_logic ÷ 100 + 1)
-reads_h  = 0.10 × log₂(read_calls + 1)
+turns_h       = max(0,  −0.15 + 0.67 × ln(turns + 1))
+reqs_h        = max(0,  −0.10 + 0.45 × ln(reqs + 1))      [fallback when turns = 0]
+lines_h       = 0.40 × log₂(lines_logic ÷ 100 + 1)
+reads_h       = 0.10 × log₂(read_calls + 1)
+tools_h       = 0.07 × log₂(tool_invocations + 1)
 
-total    = turns_h + lines_h + reads_h
-total    = max(total, 0.25)          # floor at 15 min
-total    = round to nearest 0.25h
+interaction_h = turns_h  if turns > 0  else reqs_h
+total         = interaction_h + lines_h + reads_h + tools_h
+total         = max(total, 0.25)          # floor at 15 min
+total         = round to nearest 0.25h
 ```
+
+**Why `reqs_h`?** Premium requests are available for older sessions where per-turn data was not captured. Because premium requests include automated AI completions (not just human-directed turns), the coefficient is lower (0.45 vs 0.67) and the intercept is shallower.
+
+**Why `tools_h`?** For non-coding tasks — document synthesis, image analysis, browser automation, presentation work — `lines_h ≈ 0` and `reads_h` is low, leaving the session under-credited. Total tool invocations reflect execution breadth. The coefficient is intentionally low (0.07) to avoid double-counting with `reads_h` and `lines_h` for coding-heavy sessions.
 
 ### Worked examples
 
 **Example A — Implementation session**
-> 30 turns, 400 logic lines (.py / .ts), 800 boilerplate lines (.html / .json), 8 file reads
+> 30 turns, 400 logic lines (.py / .ts), 800 boilerplate lines (.html / .json), 8 file reads, 120 tool invocations
 
 ```
 turns_h  = −0.15 + 0.67 × ln(31) = −0.15 + 0.67 × 3.43 = 2.15h
 lines_h  = 0.40 × log₂(400/100 + 1) = 0.40 × log₂(5) = 0.40 × 2.32 = 0.93h
 reads_h  = 0.10 × log₂(9) = 0.10 × 3.17 = 0.32h
+tools_h  = 0.07 × log₂(121) = 0.07 × 6.92 = 0.49h
 
            boilerplate lines (800) → excluded from formula
 
-total    = 2.15 + 0.93 + 0.32 = 3.40h → rounded to 3.50h
+total    = 2.15 + 0.93 + 0.32 + 0.49 = 3.89h → rounded to 4.00h
 ```
 
 **Example B — Research / investigation session**
-> 8 turns, 0 logic lines, 40 file reads and searches
+> 8 turns, 0 logic lines, 40 file reads and searches, 55 total tool invocations
 
 ```
 turns_h  = −0.15 + 0.67 × ln(9) = −0.15 + 0.67 × 2.20 = 1.32h
 lines_h  = 0h  (no logic code written)
 reads_h  = 0.10 × log₂(41) = 0.10 × 5.36 = 0.54h
+tools_h  = 0.07 × log₂(56) = 0.07 × 5.81 = 0.41h
 
-total    = 1.32 + 0 + 0.54 = 1.86h → rounded to 2.00h
+total    = 1.32 + 0 + 0.54 + 0.41 = 2.27h → rounded to 2.25h
 ```
 
-Without the `reads_h` term, this session would estimate at 1.25h — undercounting
-the investigation effort by nearly half.
+**Example C — Non-coding task (document synthesis / image processing)**
+> 5 turns, 0 logic lines, 3 file reads, 80 total tool invocations (browser, image, doc tools)
+
+```
+turns_h  = −0.15 + 0.67 × ln(6) = −0.15 + 0.67 × 1.79 = 1.05h
+lines_h  = 0h
+reads_h  = 0.10 × log₂(4) = 0.10 × 2.00 = 0.20h
+tools_h  = 0.07 × log₂(81) = 0.07 × 6.34 = 0.44h
+
+total    = 1.05 + 0 + 0.20 + 0.44 = 1.69h → rounded to 1.75h
+```
+
+Without `tools_h`, this session would estimate at 1.25h — the execution work would be invisible.
 
 ### Calibration basis
 
