@@ -127,17 +127,24 @@ turns to prevent automated completions from inflating estimates.
   HTML or JSON in seconds. A human expert writing the same output from scratch
   would spend hours — but they wouldn't: they'd write a 20-line template instead.
 
-- **Empirical finding from this dataset (n=38 days):** total lines added has only
+- **Empirical finding from this dataset (n=48 days):** total lines added has only
   r=+0.25 correlation with AI effort estimates. When split by file type,
   *logic lines* (`.py`, `.js`, `.ts`, …) reach r=+0.41, while *boilerplate lines*
   (`.html`, `.css`, `.json`, `.md`, …) have r=−0.14 — actively hurting accuracy.
 
-**Our response:** Lines are split at harvest time into two categories:
+**Our response:** Lines are split at harvest time into two categories — only logic
+code is counted in the estimate, because that is what a human expert would actually
+hand-author:
 
 | Category | File types | Treatment |
 |---|---|---|
-| **Logic lines** | `.py` `.js` `.ts` `.go` `.rs` `.java` `.cs` `.sh` and other code extensions | Counted; contribute to the effort estimate on a logarithmic scale |
-| **Boilerplate lines** | `.html` `.css` `.json` `.md` `.yaml` `.csv` and other data/template extensions | Tracked for display but excluded from the effort formula |
+| **Logic lines** | `.py` `.js` `.ts` `.go` `.rs` `.java` `.cs` `.sh` and other compiled/scripted code | Counted; contribute to the effort estimate on a logarithmic scale |
+| **Boilerplate lines** | `.html` `.css` `.json` `.md` `.yaml` `.csv` and other data/markup/template files | Tracked for display but **excluded from the effort formula** |
+
+AI can generate 1,000 lines of HTML or JSON in seconds — a human expert would
+never hand-write those line-for-line; they'd write a 20-line template instead. By
+isolating only logic code, the signal reflects the decisions and reasoning that
+AI actually accelerated, not the volume of generated output.
 
 Logic lines use a logarithmic scale because the first 100 lines of a new module
 require far more design thinking than the next 900 lines of implementation:
@@ -181,25 +188,61 @@ is estimated from the proportion of modified files that have logic extensions.
 | 60 | 2.50h | 5.0h |
 | 100 | 2.82h | 8.0h |
 
+
+### 2.9 "Investigation and analysis work leaves no code trace" → Read/search tool calls
+
+- **Vaithilingam et al. (2022)** found that a significant portion of AI-assisted
+  programming time is spent **probing and exploring** — reading files, searching
+  codebases, understanding context — before any code is produced.
+
+- **Forsgren et al. (2021)** SPACE framework includes **Activity** as a distinct
+  productivity dimension — encompassing tool invocations and exploratory actions,
+  not just code output.
+
+- **Alaswad et al. (2026)** identify **Context completeness** (Dimension 2) as a
+  driver of LLM-assisted effort: the work of gathering and validating information
+  before and during an AI-assisted task.
+
+- **Empirical finding (this dataset, n=48 days):** marginal R² analysis shows
+  `read_calls` (file reads + grep/glob/search tool invocations) adds +0.05 R²
+  on top of the turns + lines_logic base — the only signal that held up
+  consistently across both log-transformed and raw-hours targets. Intent-based
+  signals (e.g. `research_frac`, `building_frac`) were strong at 7 days but
+  shrank to noise at 30 days, indicating overfitting. `read_calls` remained
+  stable.
+
+**Our response:** File reads and search tool calls are counted separately and
+contribute a third logarithmic term. This captures sessions where the work is
+investigation, exploration, or analysis rather than code output — sessions that
+would otherwise be underestimated by the turns+lines formula alone:
+
+| Read/search tool calls | Contribution to estimate |
+|---|---|
+| 5 | +0.26h |
+| 10 | +0.35h |
+| 20 | +0.44h |
+| 50 | +0.57h |
+| 100 | +0.67h |
+
 ---
 
 ## 3. The Five-Dimension Framework
 
 Grounded in the **Hybrid Intelligence Effort** framework (Alaswad et al. 2026):
 
-| # | Dimension | Our proxy |
-|---|---|---|
-| 1 | LLM reasoning complexity | `conversation_turns` (log-scaled) |
-| 2 | Context completeness | File reads, searches (from tool distribution) |
-| 3 | Transformation scope | `lines_logic` (code files only), `files_touched` |
-| 4 | Iterative reasoning cycles | `conversation_turns` depth |
-| 5 | Human oversight effort | `active_minutes` relative to wall-clock time |
+| # | Dimension | Our proxy | In formula |
+|---|---|---|---|
+| 1 | LLM reasoning complexity | `conversation_turns` (log-scaled) | `turns_h` |
+| 2 | Context completeness | File reads + grep/glob/search tool calls | `reads_h` |
+| 3 | Transformation scope | `lines_logic` (logic code files only — not HTML/CSS/JSON/MD) | `lines_h` |
+| 4 | Iterative reasoning cycles | `conversation_turns` depth (captured by same log curve) | `turns_h` |
+| 5 | Human oversight effort | `active_minutes` relative to wall-clock time | speed multiplier |
 
 ---
 
 ## 4. The Complete Formula
 
-**In plain English:** The formula asks two questions and adds the answers together.
+**In plain English:** The formula asks three questions and adds the answers together.
 
 1. *How deep was the collaboration?* Count the substantive back-and-forth turns —
    each one represents the human doing real thinking (framing a problem, reviewing
@@ -207,41 +250,68 @@ Grounded in the **Hybrid Intelligence Effort** framework (Alaswad et al. 2026):
    15 turns adds more human-equivalent effort than going from 85 to 95 turns, because
    early turns drive decisions while later turns are refinements.
 
-2. *How much original logic was written?* Count lines added to code files only —
-   `.py`, `.js`, `.ts`, and similar. Exclude HTML, CSS, JSON, Markdown, and other
-   generated or template content that AI produces cheaply and a human expert would
-   never hand-write line-for-line anyway. Apply a log scale here too: the 1st
-   hundred lines of a new module require design decisions; the 10th hundred are
-   mostly implementation following established patterns.
+2. *How much original logic was written?* Count lines added to **logic code files
+   only** — `.py`, `.js`, `.ts`, `.go`, `.rs`, `.java`, `.sh`, and similar. This
+   deliberately excludes HTML, CSS, JSON, Markdown, YAML, and other markup or data
+   files. AI generates those cheaply; a human expert would never hand-write them
+   line-for-line. Apply a log scale here too: the first hundred lines of a new
+   module require design decisions; the tenth hundred are mostly implementation
+   following established patterns.
+
+3. *How much investigation and analysis happened?* Count file reads and search/grep/
+   glob tool invocations. These capture sessions where the work is exploration and
+   understanding rather than code output — research spikes, debugging investigations,
+   architecture reviews — which leave no code trace but still required skilled human
+   judgment to direct.
 
 ```
 turns_h  = max(0,  −0.15 + 0.67 × ln(turns + 1))
 lines_h  = 0.40 × log₂(lines_logic ÷ 100 + 1)
+reads_h  = 0.10 × log₂(read_calls + 1)
 
-total    = turns_h + lines_h
+total    = turns_h + lines_h + reads_h
 total    = max(total, 0.25)          # floor at 15 min
 total    = round to nearest 0.25h
 ```
 
-### Worked example
+### Worked examples
 
-> 30 turns, 400 logic lines (.py / .ts), 800 boilerplate lines (.html / .json)
+**Example A — Implementation session**
+> 30 turns, 400 logic lines (.py / .ts), 800 boilerplate lines (.html / .json), 8 file reads
 
 ```
 turns_h  = −0.15 + 0.67 × ln(31) = −0.15 + 0.67 × 3.43 = 2.15h
 lines_h  = 0.40 × log₂(400/100 + 1) = 0.40 × log₂(5) = 0.40 × 2.32 = 0.93h
+reads_h  = 0.10 × log₂(9) = 0.10 × 3.17 = 0.32h
 
            boilerplate lines (800) → excluded from formula
 
-total    = 2.15 + 0.93 = 3.08h → rounded to 3.00h
+total    = 2.15 + 0.93 + 0.32 = 3.40h → rounded to 3.50h
 ```
+
+**Example B — Research / investigation session**
+> 8 turns, 0 logic lines, 40 file reads and searches
+
+```
+turns_h  = −0.15 + 0.67 × ln(9) = −0.15 + 0.67 × 2.20 = 1.32h
+lines_h  = 0h  (no logic code written)
+reads_h  = 0.10 × log₂(41) = 0.10 × 5.36 = 0.54h
+
+total    = 1.32 + 0 + 0.54 = 1.86h → rounded to 2.00h
+```
+
+Without the `reads_h` term, this session would estimate at 1.25h — undercounting
+the investigation effort by nearly half.
 
 ### Calibration basis
 
-This formula was fitted by OLS regression against 38 days of AI-analysed sessions
-(50 matched goal-level records). The best achievable R² with these signals is ~0.30
-per goal and ~0.55 per day — the remaining variance reflects the AI's semantic
-judgment about business value, which raw counts cannot capture.
+The turns and lines terms were fitted by OLS regression against 38 days of AI-analysed
+sessions (50 matched goal-level records). The `reads_h` term was added after 30-day
+marginal R² analysis (48 records) showed `read_calls` was the only signal that
+consistently improved R² (+0.05) beyond the two-term base formula. The best
+achievable R² with countable signals is ~0.40 per goal and ~0.55 per day — the
+remaining variance reflects the AI's semantic judgment about business value and
+context quality, which raw counts cannot capture.
 
 ---
 
@@ -250,8 +320,9 @@ judgment about business value, which raw counts cannot capture.
 | Rule | Rationale |
 |---|---|
 | Floor at 0.25h | Every session with substantive turns represents at least 15 min of human thinking |
-| Boilerplate lines → 0 contribution | AI-generated HTML/CSS/JSON does not represent hand-authored human effort |
+| Boilerplate lines (HTML/CSS/JSON/MD/YAML) → 0 contribution | AI generates these cheaply; they do not represent hand-authored expert effort |
 | Logic lines on log scale | Design decisions in the first 100 lines outweigh implementation in the next 900 |
+| Read calls on log scale | Early searches orient the whole session; later searches are narrower lookups |
 
 ---
 

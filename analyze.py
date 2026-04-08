@@ -666,15 +666,16 @@ def analyze_day(
         if proj not in session_metrics:
             session_metrics[proj] = {
                 "tool_invocations": 0, "conversation_turns": 0,
-                "lines_added": 0, "sessions": 0,
-                "reads": 0, "edits": 0, "runs": 0,
+                "lines_added": 0, "lines_logic": 0, "lines_boilerplate": 0, "sessions": 0,
+                "reads": 0, "edits": 0, "runs": 0, "searches": 0,
                 "files_touched": 0, "active_minutes": 0.0,
             }
         sm = session_metrics[proj]
         sm["tool_invocations"] += n_tools
         sm["conversation_turns"] += n_turns
-        sm["lines_added"]  += s.get("lines_added",  0)
-        sm["lines_logic"]  += s.get("lines_logic",  0)
+        sm["lines_added"]       += s.get("lines_added",       0)
+        sm["lines_logic"]       += s.get("lines_logic",       0)
+        sm["lines_boilerplate"] += s.get("lines_boilerplate", 0)
         sm["sessions"] += 1
         # Categorize tool types
         for m in s.get("messages", []):
@@ -682,6 +683,8 @@ def analyze_day(
                 tl = t.lower()
                 if tl.startswith("read"):
                     sm["reads"] += 1
+                elif "grep" in tl or "glob" in tl or "search" in tl or "find" in tl:
+                    sm["searches"] += 1
                 elif tl.startswith("edit") or tl.startswith("write"):
                     sm["edits"] += 1
                 elif tl.startswith("run") or tl.startswith("bash"):
@@ -840,21 +843,29 @@ def _api_analyze(sessions: list, backend: str, cred: str) -> dict | None:
 def _fallback_analysis(target_date: str, sessions: list) -> dict:
     """Heuristic fallback when API is unavailable.
 
-    Formula (calibrated against 38 days of AI estimates, R²≈0.30 per goal):
+    Formula (calibrated against 48 days of AI estimates, R²≈0.40 per goal):
 
         turns_h  = max(0, −0.15 + 0.67 × ln(turns + 1))
         lines_h  = 0.40 × log₂(lines_logic / 100 + 1)
-        total    = round(turns_h + lines_h, nearest 0.25h), min 0.25h
+        reads_h  = 0.10 × log₂(read_calls + 1)
+        total    = round(turns_h + lines_h + reads_h, nearest 0.25h), min 0.25h
 
     Where:
         turns       = substantive conversation turns (trivial approvals excluded)
-        lines_logic = lines written to code files (.py/.js/.ts/…); boilerplate
-                      (.html/.css/.json/.md/…) is excluded because AI generates
-                      it cheaply and the AI estimator discounts it entirely.
+        lines_logic = lines written to logic code files (.py/.js/.ts/.go/… and
+                      similar); boilerplate (.html/.css/.json/.md/.yaml/…) is
+                      excluded — AI generates it cheaply and the estimator
+                      discounts it entirely. Only logic code represents the kind
+                      of thinking a human expert would bill for.
+        read_calls  = file reads + grep/glob/search tool invocations; captures
+                      investigation and analysis sessions where the work is
+                      exploration rather than code output.
 
     The logarithmic turns scale was derived from OLS regression on the full session
     dataset. The tiered step-function previously used overestimated by 5–10× on
     high-turn sessions (e.g. 108 turns → formula gave 26h, AI gives 2.75h).
+    read_calls was added after 30-day marginal R² analysis showed it as the only
+    signal that consistently improved R² (+0.05) beyond turns + lines_logic.
     """
     import math as _math
 
@@ -869,11 +880,12 @@ def _fallback_analysis(target_date: str, sessions: list) -> dict:
                 return role
         return "Software Engineer"
 
-    def _estimate_hours(turns: int, lines_logic: int) -> float:
-        """Calibrated effort estimate from conversation turns + logic lines."""
+    def _estimate_hours(turns: int, lines_logic: int, read_calls: int = 0) -> float:
+        """Calibrated effort estimate from conversation turns + logic lines + read calls."""
         turns_h = max(0.0, -0.15 + 0.67 * _math.log1p(turns))
         lines_h = 0.40 * _math.log(lines_logic / 100 + 1, 2) if lines_logic > 0 else 0.0
-        total   = turns_h + lines_h
+        reads_h = 0.10 * _math.log2(read_calls + 1) if read_calls > 0 else 0.0
+        total   = turns_h + lines_h + reads_h
         return max(0.25, round(total * 4) / 4)
 
     goals = []
@@ -886,7 +898,12 @@ def _fallback_analysis(target_date: str, sessions: list) -> dict:
 
         turns       = len(user_msgs)
         lines_logic = s.get("lines_logic", 0) or 0
-        total_hours = _estimate_hours(turns, lines_logic)
+        read_calls  = sum(
+            1 for m in s.get("messages", []) if m.get("role") == "user"
+            for t in m.get("tools_after", [])
+            if t.lower().startswith("read") or any(k in t.lower() for k in ("grep", "glob", "search", "find"))
+        )
+        total_hours = _estimate_hours(turns, lines_logic, read_calls)
 
         tasks = []
         for msg in user_msgs[:5]:
