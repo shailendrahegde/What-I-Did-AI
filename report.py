@@ -2161,26 +2161,45 @@ def generate_report(
     show_all = include_copilot and include_claude
     default_tab = "all" if show_all else ("copilot" if include_copilot else "claude")
 
+    # Format date range for masthead: "Mar 15 – Apr 13, 2026"
+    def _fmt_date_pretty(d: str) -> str:
+        try:
+            from datetime import datetime as _dt
+            dt = _dt.strptime(d, "%Y-%m-%d")
+            return dt.strftime("%b %-d") if _platform.system() != "Windows" else dt.strftime("%b %d").lstrip("0").replace(" 0", " ")
+        except Exception:
+            return d
+    import platform as _platform
+    d0, d1 = dates[0], dates[-1]
+    if d0 == d1:
+        date_pretty = _fmt_date_pretty(d0) + ", " + d0[:4]
+    else:
+        y0, y1 = d0[:4], d1[:4]
+        date_pretty = (_fmt_date_pretty(d0) + " – " + _fmt_date_pretty(d1) +
+                       (f", {y1}" if y0 == y1 else f", {y0} – {y1}"))
+    n_days_str = f"{len(dates)} day{'s' if len(dates) != 1 else ''}"
+    total_h_str = _fmt_h(c_hours + cl_hours)
+
     tab_buttons = ""
     if show_all:
         tab_buttons += (
             f'<button class="tab-btn" id="tab-all" onclick="showTab(\'all\')">'
             f'<span class="tab-label">Summary</span>'
-            f'<span class="tab-sub">Combined · {_fmt_h(c_hours + cl_hours)}</span>'
+            f'<span class="tab-sub">{_fmt_h(c_hours + cl_hours)}</span>'
             f'</button>'
         )
     if include_copilot:
         tab_buttons += (
             f'<button class="tab-btn" id="tab-copilot" onclick="showTab(\'copilot\')">'
-            f'<span class="tab-label" style="color:#8534F3">GitHub Copilot</span>'
-            f'<span class="tab-sub">{_fmt_h(c_hours)} human equiv.</span>'
+            f'<span class="tab-label">GitHub Copilot</span>'
+            f'<span class="tab-sub">{_fmt_h(c_hours)}</span>'
             f'</button>'
         )
     if include_claude:
         tab_buttons += (
             f'<button class="tab-btn" id="tab-claude" onclick="showTab(\'claude\')">'
-            f'<span class="tab-label" style="color:#DE7356">Claude</span>'
-            f'<span class="tab-sub">{_fmt_h(cl_hours)} human equiv.</span>'
+            f'<span class="tab-label">Claude</span>'
+            f'<span class="tab-sub">{_fmt_h(cl_hours)}</span>'
             f'</button>'
         )
 
@@ -2237,38 +2256,99 @@ window.onload = function() {{
 </script>
 <style>
 body {{ margin:0;padding:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; }}
-.tab-bar {{
+.masthead {{
   position:sticky; top:0; z-index:100;
-  background:#1b1f23; border-bottom:1px solid #30363d;
-  display:flex; align-items:stretch; padding:0 24px;
-  box-shadow:0 2px 8px rgba(0,0,0,0.25);
-  gap:4px;
+  background:#0d1117;
+  border-bottom:1px solid #21262d;
+  box-shadow:0 2px 8px rgba(0,0,0,0.35);
+}}
+.masthead-top {{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:7px 24px 6px;
+  max-width:960px; margin:0 auto;
+}}
+.masthead-brand {{
+  display:flex; align-items:center; gap:10px;
+}}
+.masthead-title {{
+  font-size:15px; font-weight:800; color:#ffffff;
+  letter-spacing:-0.3px; white-space:nowrap;
+}}
+.masthead-title span {{
+  background:linear-gradient(90deg,#a78bfa,#60a5fa);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  background-clip:text;
+}}
+.masthead-tagline {{
+  font-size:10px; color:rgba(255,255,255,0.35);
+  border-left:1px solid rgba(255,255,255,0.15);
+  padding-left:10px; font-style:italic;
+}}
+.masthead-meta {{
+  display:flex; align-items:center; gap:8px;
+}}
+.masthead-pill {{
+  font-size:10px; font-weight:500; color:rgba(255,255,255,0.45);
+  background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1);
+  border-radius:20px; padding:2px 9px; white-space:nowrap;
+}}
+.masthead-total {{
+  font-size:12px; font-weight:700; color:rgba(255,255,255,0.8);
+  white-space:nowrap;
+}}
+.masthead-total-sub {{
+  font-size:9px; color:rgba(255,255,255,0.3);
+}}
+.tab-bar-wrap {{
+  background:#161b22; border-top:1px solid #21262d;
+}}
+.tab-bar {{
+  display:flex; align-items:center; padding:0 16px;
+  gap:4px; max-width:960px; margin:0 auto;
 }}
 .tab-btn {{
-  padding:16px 28px; font-size:13px; font-weight:500;
-  color:rgba(255,255,255,0.55);
-  background:none; border:none; border-bottom:3px solid transparent;
-  cursor:pointer; margin-bottom:-1px; transition:all 0.15s;
-  display:flex; flex-direction:column; align-items:flex-start;
-  gap:2px; white-space:nowrap;
+  padding:7px 16px; font-size:12px; font-weight:500;
+  color:rgba(255,255,255,0.45);
+  background:none; border:none; border-bottom:2px solid transparent;
+  cursor:pointer; transition:all 0.15s;
+  display:flex; align-items:center; gap:6px; white-space:nowrap;
+  border-radius:0;
 }}
-.tab-btn:hover {{ color:rgba(255,255,255,0.85); background:rgba(255,255,255,0.06); border-radius:4px 4px 0 0; }}
-.tab-label {{ font-size:14px; font-weight:700; line-height:1; }}
-.tab-sub {{ font-size:10px; font-weight:400; opacity:0.65; letter-spacing:0.2px; }}
-.tab-btn.active {{ color:#fff; }}
-.tab-btn.active .tab-label {{ color:inherit; }}
-#tab-all.active {{ border-bottom-color:#ffffff; }}
-#tab-copilot.active {{ border-bottom-color:#8534F3; }}
-#tab-copilot.active .tab-label {{ color:#b084f7; }}
-#tab-claude.active {{ border-bottom-color:#DE7356; }}
-#tab-claude.active .tab-label {{ color:#f0a080; }}
-.tab-hours {{ font-size:11px; font-weight:400; opacity:0.7; }}
+.tab-btn:hover {{ color:rgba(255,255,255,0.8); background:rgba(255,255,255,0.05); }}
+.tab-label {{ font-size:12px; font-weight:600; line-height:1; }}
+.tab-sub {{
+  font-size:10px; font-weight:400; color:rgba(255,255,255,0.35);
+  background:rgba(255,255,255,0.08); border-radius:10px;
+  padding:1px 7px;
+}}
+.tab-btn.active {{ color:#fff; border-bottom:2px solid currentColor; }}
+#tab-all.active {{ color:#c4b5fd; }}
+#tab-all.active .tab-sub {{ background:rgba(167,139,250,0.15); color:#c4b5fd; }}
+#tab-copilot.active {{ color:#b084f7; }}
+#tab-copilot.active .tab-sub {{ background:rgba(133,52,243,0.15); color:#b084f7; }}
+#tab-claude.active {{ color:#f0a080; }}
+#tab-claude.active .tab-sub {{ background:rgba(222,115,86,0.15); color:#f0a080; }}
 .view {{ display:none; }}
 </style>
 </head>
 <body>
-<div class="tab-bar">
-  {tab_buttons}
+<div class="masthead">
+  <div class="masthead-top">
+    <div class="masthead-brand">
+      <div class="masthead-title">What I Did <span>AI</span></div>
+      <div class="masthead-tagline">Analytics report on how you used AI in your work</div>
+    </div>
+    <div class="masthead-meta">
+      <div class="masthead-pill">{date_pretty}</div>
+      <div class="masthead-pill">{n_days_str}</div>
+      <div class="masthead-pill" style="color:rgba(255,255,255,0.7);font-weight:700">{total_h_str} human equiv.</div>
+    </div>
+  </div>
+  <div class="tab-bar-wrap">
+    <div class="tab-bar">
+      {tab_buttons}
+    </div>
+  </div>
 </div>
 {all_view}
 {copilot_view}
