@@ -24,16 +24,22 @@
 # mode_name | intent_match | description
 # Priority order: Hand-holding → Grunt override → Trivial → Intent-based (first match wins).
 # Refinement FIRST over Building and Designing — iterating on existing output wins.
-Refining  | Iterating                                  | Iterating, polishing, improving existing work
+Refining     | Iterating                                  | Iterating, polishing, improving existing work
 Designing    | Designing,Planning                         | Net-new design decisions, direction changes
 Researching  | Researching,Investigating,Navigating       | Exploring options, investigating
-Building             | Building                                   | Writing code, generating new features
-Delegating  | Shipping,Configuring                       | Git ops, config, installs, docs, routine tasks
+Analyzing    | Analyzing                                  | Data analysis, image analysis, synthesizing results
+Learning     | Learning                                   | Asking how-to, seeking explanations, getting recommendations
+Reviewing    | Reviewing                                  | Code reviews, PR reviews, checking and validating work
+Building     | Building                                   | Writing code, generating new features
+Delegating   | Shipping,Configuring                       | Git ops, config, installs, docs, routine tasks
 
 [mode_colors]
 Designing    | #7b1fa2
 Researching  | #1a7f37
-Building             | #0078d4
-Refining  | #0969da
+Building     | #0078d4
+Refining     | #0969da
 Course-correcting | #e65100
-Delegating  | #6a737d
+Delegating   | #6a737d
+Analyzing    | #b45309
+Learning     | #0891b2
+Reviewing    | #4f46e5

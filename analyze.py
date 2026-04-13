@@ -364,6 +364,9 @@ _QUALITY_INTENT_PATTERNS: dict = {
     "Testing":       re.compile(r"\b(test|verify|validate|check if|smoke|does it work|try it|confirm)\b", re.I),
     "Configuring":   re.compile(r"\b(config|setup|auth|login|permission|access|credential|settings|env|alias|profile)\b", re.I),
     "Navigating":    re.compile(r"\b(find|search|where is|show me|list|fetch|locate|get the latest|look for)\b", re.I),
+    "Analyzing":     re.compile(r"\b(analyz|analyse|summarize|summarise|parse|extract|breakdown|break down|interpret|chart|graph|visuali|metric|statistic|insight|pattern|trend|correlat|what does this (data|chart|image|file|number)|tell me what|read this|look at (this|the) (data|image|chart|file|screenshot|result)|how many|count the|percentage|compare (the|these) (data|number|result|figure))\b", re.I),
+    "Learning":      re.compile(r"\b(how (do i|can i|should i|would i)|what (is|are|does|should)|tell me (about|how|what|why)|explain (to me|how|what|why|this|the)|help me understand|teach me|show me how|what.s the (best|difference|right way|proper way)|can you (explain|clarify|describe|walk me through|give me an example)|i.m not sure|i don.t understand|what does .+ mean|suggestion|recommend|advise|best practice|should i use|which (is better|should i|would you))\b", re.I),
+    "Reviewing":     re.compile(r"\b(review|check (my|this|the|over)|look over|read (through|over)|give me (feedback|your thoughts|comments)|critique|evaluate|assess|audit|does this look|is this (correct|right|good|ok)|any (issues|problems|concerns|suggestions) with|what do you think (of|about)|pr review|code review|pull request|diff|compare (this|these)|sanity check|does this make sense|is there anything (wrong|missing|i missed)|can you spot|catch any)\b", re.I),
 }
 
 _TRIVIAL_TURN_RX = re.compile(
@@ -678,6 +681,7 @@ def analyze_day(
                 "lines_added": 0, "lines_logic": 0, "lines_boilerplate": 0, "sessions": 0,
                 "reads": 0, "edits": 0, "runs": 0, "searches": 0,
                 "files_touched": 0, "active_minutes": 0.0,
+                "tokens": {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "total": 0},
             }
         sm = session_metrics[proj]
         sm["tool_invocations"] += n_tools
@@ -686,6 +690,8 @@ def analyze_day(
         sm["lines_logic"]       += s.get("lines_logic",       0)
         sm["lines_boilerplate"] += s.get("lines_boilerplate", 0)
         sm["sessions"] += 1
+        for tk in ("input", "output", "cache_read", "cache_creation", "total"):
+            sm["tokens"][tk] = sm["tokens"].get(tk, 0) + s.get("tokens", {}).get(tk, 0)
         # Categorize tool types
         for m in s.get("messages", []):
             for t in m.get("tools_after", []):

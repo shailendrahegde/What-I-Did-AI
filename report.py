@@ -61,17 +61,23 @@ INTENT_COLORS = {
 # ── Collaboration mode definitions ────────────────────────────────────────────
 # Each entry: (mode_name, icon, description, bar_color, is_high_value, [intents])
 _COLLAB_MODES = [
-    ("Building",             "🏗",  "Writing code, generating files",         "#0078d4", True,
+    ("Building",          "🏗",  "Writing code, generating files",                 "#0078d4", True,
      ["Building"]),
-    ("Researching",  "🔬",  "Exploring options, investigating",        "#1a7f37", True,
+    ("Researching",       "🔬",  "Exploring options, investigating",                "#1a7f37", True,
      ["Researching", "Investigating"]),
-    ("Designing",    "🎨",  "Design, strategy, architecture",          "#7b1fa2", True,
+    ("Designing",         "🎨",  "Design, strategy, architecture",                 "#7b1fa2", True,
      ["Designing", "Planning"]),
-    ("Refining",  "✨",  "Iterating, polishing, improving",         "#1565c0", True,
+    ("Refining",          "✨",  "Iterating, polishing, improving",                "#1565c0", True,
      ["Iterating"]),
-    ("Delegating",  "⚡",  "Git ops, config, installs, routine",      "#6a737d", False,
+    ("Analyzing",         "📊",  "Data analysis, image analysis, synthesizing",    "#b45309", True,
+     ["Analyzing"]),
+    ("Learning",          "💡",  "How-to, explanations, recommendations",          "#0891b2", True,
+     ["Learning"]),
+    ("Reviewing",         "🔍",  "Code reviews, PR reviews, validating work",      "#4f46e5", True,
+     ["Reviewing"]),
+    ("Delegating",        "⚡",  "Git ops, config, installs, routine",             "#6a737d", False,
      ["Shipping", "Configuring", "Navigating"]),
-    ("Course-correcting", "🔧",  "Errors, retries, course-correcting AI",   "#e65100", False,
+    ("Course-correcting", "🔧",  "Errors, retries, course-correcting AI",          "#e65100", False,
      ["Testing", "Correcting"]),
 ]
 
@@ -262,9 +268,17 @@ def _agg(analyses: list, key: str) -> dict | None:
         for proj, sm in item.get("session_metrics", {}).items():
             if proj not in session_mets:
                 session_mets[proj] = dict(sm)
+                # deep-copy the tokens sub-dict so we don't mutate cached data
+                session_mets[proj]["tokens"] = dict(sm.get("tokens", {}))
             else:
                 for k in sm:
-                    session_mets[proj][k] = session_mets[proj].get(k, 0) + sm.get(k, 0)
+                    if k == "tokens":
+                        for tk in sm["tokens"]:
+                            session_mets[proj]["tokens"][tk] = (
+                                session_mets[proj].get("tokens", {}).get(tk, 0) + sm["tokens"].get(tk, 0)
+                            )
+                    else:
+                        session_mets[proj][k] = session_mets[proj].get(k, 0) + sm.get(k, 0)
 
     active_days = sum(1 for a in analyses if a.get(key))
     sessions_count = _sum_scalar("sessions_count")
@@ -321,11 +335,11 @@ def _agg(analyses: list, key: str) -> dict | None:
 # ── Section builders ──────────────────────────────────────────────────────────
 
 def _section_header(title: str, subtitle: str = "", extra: str = "") -> str:
-    sub = f'<div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:2px">{_e(subtitle)}</div>' if subtitle else ""
+    sub = f'<div style="font-size:13px;color:rgba(255,255,255,0.65);margin-top:4px;line-height:1.4">{_e(subtitle)}</div>' if subtitle else ""
     return f"""<table width="100%" cellpadding="0" cellspacing="0"><tbody><tr>
-<td style="background:linear-gradient(135deg,#24292f,#1b1f23);padding:10px 24px">
-  {extra}<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;
-              color:rgba(255,255,255,0.7)">{_e(title)}</div>{sub}
+<td style="background:linear-gradient(135deg,#24292f,#1b1f23);padding:14px 24px">
+  {extra}<div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;
+              color:rgba(255,255,255,0.9)">{_e(title)}</div>{sub}
 </td></tr></tbody></table>"""
 
 
@@ -529,16 +543,22 @@ def _narrative_row(data: dict, accent: str, vid: str = "") -> str:
 </td></tr>"""
 
 
-def _goals_section(goals: list, source: str, show_date: bool = False, vid: str = "") -> str:
+def _goals_section(goals: list, source: str, show_date: bool = False, vid: str = "", session_metrics: dict | None = None) -> str:
     if not goals:
         return ""
     accent   = ACCENT[source]
     accent_bg= ACCENT_BG.get(source, "#e8f2fb")
+    session_metrics = session_metrics or {}
     rows     = []
     pfx      = f"{vid}-" if vid else ""   # unique prefix per view
 
     # Sort by hours descending — must match _narrative_row sort so numbered items align
     goals = sorted(goals, key=lambda g: -(g.get("human_hours") or 0))
+
+    def _fmt_tok(n: int) -> str:
+        if n >= 1_000_000: return f"{n/1_000_000:.1f}M"
+        if n >= 1_000:     return f"{n/1_000:.0f}K"
+        return str(n)
 
     # Group into top-5 visible + rest collapsible
     for gi, g in enumerate(goals):
@@ -549,15 +569,18 @@ def _goals_section(goals: list, source: str, show_date: bool = False, vid: str =
         date  = g.get("_date", "")
         tasks = g.get("tasks", [])
 
-        # Skill pills for the goal row
-        domain_pills = "".join(
-            f'<span style="background:{DOMAIN_PILL_BG};color:{DOMAIN_PILL_FG};padding:2px 8px;border-radius:9px;font-size:11px;font-weight:600;display:inline-block;margin:2px 3px 2px 0;white-space:nowrap">{_e(s)}</span>'
-            for t in tasks for s in t.get("domain_skills", [])[:2]
-        )[:3*200]  # cap length
-        tech_pills = "".join(
-            f'<span style="background:{TECH_PILL_BG};color:{TECH_PILL_FG};padding:2px 8px;border-radius:9px;font-size:11px;font-weight:600;display:inline-block;margin:2px 3px 2px 0;white-space:nowrap">{_e(s)}</span>'
-            for t in tasks for s in t.get("tech_skills", [])[:2]
-        )[:3*150]
+        # Token/cost column — Claude: real tokens + API cost; Copilot: conversation turns (flat sub)
+        sm_proj = session_metrics.get(proj, {})
+        proj_tokens = sm_proj.get("tokens", {})
+        proj_total_tok = proj_tokens.get("total", 0)
+        proj_cost = _token_cost(proj_tokens)
+        if proj_total_tok > 0:
+            token_cell = (
+                f'<div style="font-size:14px;font-weight:700;color:{accent}">{_fmt_tok(proj_total_tok)}</div>'
+                f'<div style="font-size:9px;color:#6a737d;margin-top:1px">tokens</div>'
+            )
+        else:
+            token_cell = ""
 
         date_badge = f'<span style="font-size:10px;font-weight:600;color:{accent};background:{accent_bg};padding:1px 7px;border-radius:8px;margin-right:6px;white-space:nowrap">{_e(date[5:])}</span>' if (show_date and date) else ""
 
@@ -566,17 +589,16 @@ def _goals_section(goals: list, source: str, show_date: bool = False, vid: str =
     <div style="width:22px;height:22px;background:{accent};border-radius:50%;
                 color:#fff;font-size:11px;font-weight:700;text-align:center;line-height:22px">{gi+1}</div>
   </td>
-  <td style="padding:10px 8px;border-bottom:1px solid #dde1e7;vertical-align:top;width:42%">
+  <td style="padding:10px 8px;border-bottom:1px solid #dde1e7;vertical-align:middle;width:58%">
     <div style="font-size:12px;font-weight:600;color:#1b1f23;line-height:1.35">
       <span id="{gid}-arrow" style="font-size:10px;color:{accent};margin-right:5px">&#9654;</span>
       {date_badge}{_e(title)}
     </div>
   </td>
-  <td style="padding:10px 8px;border-bottom:1px solid #dde1e7;vertical-align:middle;width:40%">
-    <div>{domain_pills}{tech_pills}</div>
-    <div style="font-size:10px;color:#6a737d;margin-top:5px">{len(tasks)} task{"s" if len(tasks)!=1 else ""}</div>
+  <td style="padding:10px 12px;border-bottom:1px solid #dde1e7;vertical-align:middle;text-align:center;width:22%;border-left:1px solid #f0f2f5">
+    {token_cell}
   </td>
-  <td style="padding:10px 8px;border-bottom:1px solid #dde1e7;vertical-align:middle;text-align:right;width:14%">
+  <td style="padding:10px 8px;border-bottom:1px solid #dde1e7;vertical-align:middle;text-align:right;width:16%">
     <div style="font-size:16px;font-weight:700;color:{accent}">{_fmt_h(hours)}</div>
     <div style="font-size:10px;color:#6a737d;margin-top:1px">human est.</div>
   </td>
@@ -694,7 +716,7 @@ def _produced_section(data: dict, accent: str) -> str:
     return _wrap_section(inner)
 
 
-def _skills_section(goals: list, accent: str) -> str:
+def _skills_section(goals: list, accent: str, tool_name: str = "AI") -> str:
     """Skills Mobilized — role rows with bar charts.
 
     Allocation: primary role (inferred from task_type) gets 65% of task hours;
@@ -769,12 +791,12 @@ def _skills_section(goals: list, accent: str) -> str:
   </td>
 </tr>"""
 
-    inner = f"""{_section_header("Skills Mobilized", "Hours by professional role — primary role 65%, secondary 35% of task time")}
+    inner = f"""{_section_header("Skills Mobilized", f"This is the team that {tool_name} assembled for you — at no headcount cost")}
 <div style="padding:14px 24px 18px">
   <table width="100%" cellpadding="0" cellspacing="0">
     <tbody>{rows}</tbody>
   </table>
-  <div style="font-size:10px;color:#6a737d;margin-top:10px">
+  <div style="font-size:11px;color:#6a737d;margin-top:10px">
     Total attributed: {_fmt_h(displayed_h)} &nbsp;·&nbsp;
     Multi-role tasks weighted by primary contribution (task type &rarr; role)
   </div>
@@ -792,25 +814,10 @@ def _collab_section(data: dict, source: str, tool_name: str) -> str:
     # quality_modes: mode_name → minutes (time-weighted, from compute_active_time_quality)
     total_min = sum(quality_modes.values()) or 1
 
-    # Build mode_data tuples aligned with _COLLAB_MODES for card rendering
-    # Tuple: (name, icon, desc, color, high_val, mins, pct, hrs_display)
-    _QUALITY_COLOR_MAP = {
-        "Designing":    "#7b1fa2",
-        "Researching":  "#1a7f37",
-        "Building":             "#0078d4",
-        "Refining":  "#0969da",
-        "Course-correcting": "#e65100",
-        "Delegating":  "#6a737d",
-    }
-    _QUALITY_ICON_MAP = {
-        "Designing":    "🎨",
-        "Researching":  "🔬",
-        "Building":             "🏗",
-        "Refining":  "✨",
-        "Course-correcting": "🔧",
-        "Delegating":  "⚡",
-    }
-    _HIGH_VALUE = {"Designing", "Researching", "Building", "Refining"}
+    # Build mode_data from _COLLAB_MODES registry (single source of truth)
+    _QUALITY_COLOR_MAP = {n: color for n, _, _, color, _, _ in _COLLAB_MODES}
+    _QUALITY_ICON_MAP  = {n: icon  for n, icon, _, _, _, _ in _COLLAB_MODES}
+    _HIGH_VALUE        = {n for n, _, _, _, hv, _ in _COLLAB_MODES if hv}
 
     mode_data = []
     for mode_name, mins in sorted(quality_modes.items(), key=lambda x: -x[1]):
@@ -855,90 +862,121 @@ def _collab_section(data: dict, source: str, tool_name: str) -> str:
         "Refining":          "e.g. tweak layout, adjust error handling, rename, polish copy",
         "Designing":         "e.g. plan architecture, choose a pattern, rethink an approach",
         "Researching":       "e.g. compare libraries, investigate a failure, understand behavior",
+        "Analyzing":         "e.g. analyze this dataset, summarize results, what does this chart show",
+        "Learning":          "e.g. how do I, explain this to me, what's the best practice, suggest an approach",
+        "Reviewing":         "e.g. review this code, does this look right, any issues with this PR",
         "Delegating":        "e.g. git commit & push, update README, install packages, configure CI",
         "Course-correcting": "e.g. fix a wrong assumption, undo a bad change, redirect AI",
     }
-    # Map mode name → intents (mirrors _COLLAB_MODES)
     _MODE_INTENTS = {n: intents for n, _, _, _, _, intents in _COLLAB_MODES}
-
     sample_messages = data.get("sample_messages") or {}
+    import hashlib as _hl2
+    _uid2 = _hl2.md5((source + tool_name + "collab").encode()).hexdigest()[:6]
 
-    def _mode_card(name, icon, desc, color, high_val, mins, pct, hrs):
-        if mins == 0:
-            return ""
-        bar_w   = max(int(pct), 2)
-        hrs_str = f"{int(mins)}m" if mins < 60 else _fmt_h(hrs)
-        example = _MODE_EXAMPLES.get(name, "")
-        example_html = (f'<div style="font-size:10px;color:#8a8a8a;font-style:italic;margin-top:3px">'
-                        f'{_e(example)}</div>') if example else ""
-
-        # Gather samples for this mode's intents, sort by recency, take 3
+    def _sessions_toggle(name, color):
+        """'From your sessions' expandable for a mode — returns HTML or empty string."""
         mode_intents = _MODE_INTENTS.get(name, [name])
         raw_samples = []
         for intent in mode_intents:
             raw_samples.extend(sample_messages.get(intent, []))
         samples = sorted(raw_samples, key=lambda m: m.get("date", ""), reverse=True)[:3]
-
-        if samples:
-            card_id = f"{source}-{name.lower().replace(' ','').replace('-','')}-ex"
-            items_html = "".join(
-                f'<div style="padding:5px 0;border-bottom:1px solid #f4f4f4;'
-                f'display:flex;gap:10px;align-items:baseline">'
-                f'<span style="font-size:9px;color:#aaa;white-space:nowrap;min-width:38px">'
-                f'{m["date"][5:] if m.get("date") else ""}</span>'
-                f'<span style="font-size:11px;color:#444;font-style:italic">'
-                f'"{_e(m["text"][:80].rstrip())}{"…" if len(m["text"]) > 80 else ""}"'
-                f'</span></div>'
-                for m in samples
-            )
-            toggle_html = (
-                f'<div style="margin-top:8px">'
-                f'<button onclick="var d=document.getElementById(\'{card_id}\');'
-                f'var a=this.querySelector(\'.arr\');'
-                f'if(d.style.display===\'none\'){{d.style.display=\'block\';a.textContent=\'▼\'}}'
-                f'else{{d.style.display=\'none\';a.textContent=\'▶\'}};return false" '
-                f'style="background:none;border:none;cursor:pointer;font-size:10px;'
-                f'color:{color};padding:0;display:flex;align-items:center;gap:4px;'
-                f'font-family:inherit">'
-                f'<span class="arr">▶</span> From your sessions'
-                f'</button>'
-                f'<div id="{card_id}" style="display:none;margin-top:6px">'
-                f'{items_html}'
-                f'</div></div>'
-            )
-        else:
-            toggle_html = ""
-
+        if not samples:
+            return ""
+        card_id = f"{source}-{_uid2}-{name.lower().replace(' ','').replace('-','')}-ex"
+        items_html = "".join(
+            f'<div style="padding:5px 0;border-bottom:1px solid #f4f4f4;'
+            f'display:flex;gap:10px;align-items:baseline">'
+            f'<span style="font-size:9px;color:#aaa;white-space:nowrap;min-width:38px">'
+            f'{m["date"][5:] if m.get("date") else ""}</span>'
+            f'<span style="font-size:11px;color:#444;font-style:italic">'
+            f'"{_e(m["text"][:90].rstrip())}{"…" if len(m["text"]) > 90 else ""}"'
+            f'</span></div>'
+            for m in samples
+        )
         return (
-            f'<div style="background:#fff;border:1px solid #dde1e7;border-radius:9px;'
-            f'border-left:3px solid {color};padding:14px 16px;margin-bottom:10px">'
-            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
-            f'<div style="font-size:13px;font-weight:700;color:#1b1f23">'
-            f'<span style="margin-right:8px">{icon}</span>{_e(name)}</div>'
-            f'<div style="font-size:16px;font-weight:700;color:{color}">{pct:.0f}%</div>'
-            f'</div>'
-            f'<div style="background:#f0f2f5;border-radius:4px;height:6px;width:100%;margin-bottom:8px">'
-            f'<div style="background:{color};border-radius:4px;height:6px;width:{bar_w}%;min-width:4px"></div>'
-            f'</div>'
-            f'<div style="font-size:11px;color:#6a737d">{_e(desc)} &nbsp;·&nbsp; '
-            f'<strong style="color:#1b1f23">{_e(hrs_str)}</strong></div>'
-            f'{example_html}'
-            f'{toggle_html}'
-            f'</div>'
+            f'<span style="margin-left:8px">'
+            f'<button onclick="var d=document.getElementById(\'{card_id}\');'
+            f'var a=this.querySelector(\'.arr{card_id}\');'
+            f'if(d.style.display===\'none\'){{d.style.display=\'block\';a.textContent=\'▼\'}}'
+            f'else{{d.style.display=\'none\';a.textContent=\'▶\'}};return false" '
+            f'style="background:none;border:none;cursor:pointer;font-size:10px;'
+            f'color:{color};padding:0;display:inline-flex;align-items:center;gap:3px;'
+            f'font-family:inherit;vertical-align:middle">'
+            f'<span class="arr{card_id}">▶</span> From your sessions'
+            f'</button></span>'
+            f'<div id="{card_id}" style="display:none;margin-top:6px;padding-left:4px">'
+            f'{items_html}</div>'
         )
 
-    # Build 2-column layout (left col: even indices, right col: odd indices)
-    visible = [m for m in mode_data if m[5] >= 0.1]   # mins > 0.1
-    left_col  = "".join(_mode_card(*m) for m in visible[0::2])
-    right_col = "".join(_mode_card(*m) for m in visible[1::2])
+    # Build table rows (sorted by minutes desc)
+    visible = [m for m in mode_data if m[5] >= 0.1]
+    max_pct = max((m[6] for m in visible), default=1)
 
-    inner = f"""{_section_header("How I Collaborated", f"The different types of work {tool_name} handled for you")}
+    def _table_row(name, icon, desc, color, high_val, mins, pct, hrs, hidden=False):
+        bar_w   = max(int(pct / max_pct * 100), 2)
+        hrs_str = f"{int(mins)}m" if mins < 60 else _fmt_h(hrs)
+        example = _MODE_EXAMPLES.get(name, "")
+        sessions_html = _sessions_toggle(name, color)
+        display = ' style="display:none"' if hidden else ""
+        return (
+            f'<tr{display}>'
+            f'<td style="padding:8px 10px 8px 4px;white-space:nowrap;vertical-align:middle;width:130px">'
+            f'  <span style="font-size:13px;margin-right:6px">{icon}</span>'
+            f'  <span style="font-size:13px;font-weight:600;color:#1b1f23">{_e(name)}</span>'
+            f'</td>'
+            f'<td style="padding:8px 10px;vertical-align:middle">'
+            f'  <div style="background:#f0f2f5;border-radius:4px;height:8px;width:100%">'
+            f'    <div style="background:{color};border-radius:4px;height:8px;width:{bar_w}%;min-width:4px"></div>'
+            f'  </div>'
+            f'  <div style="font-size:10px;color:#6a737d;margin-top:3px;font-style:italic">{_e(example)}</div>'
+            f'  {sessions_html}'
+            f'</td>'
+            f'<td style="padding:8px 4px 8px 10px;white-space:nowrap;text-align:right;vertical-align:middle;width:60px">'
+            f'  <span style="font-size:15px;font-weight:700;color:{color}">{pct:.0f}%</span>'
+            f'  <div style="font-size:10px;color:#6a737d">{hrs_str}</div>'
+            f'</td>'
+            f'</tr>'
+        )
+
+    top5    = visible[:5]
+    rest    = visible[5:]
+    rows_top  = "".join(_table_row(*m) for m in top5)
+    rows_rest = "".join(_table_row(*m, hidden=True) for m in rest)
+
+    show_more_btn = ""
+    more_id = f"cm{_uid2}"
+    if rest:
+        # Tag each hidden rest row with a unique class-like id prefix for easy JS selection
+        tagged_rows = []
+        for i, m in enumerate(rest):
+            row = _table_row(*m, hidden=True)
+            row = row.replace("<tr ", f'<tr id="{more_id}r{i}" ', 1)
+            tagged_rows.append(row)
+        rows_rest = "".join(tagged_rows)
+        js = (
+            f"var c=document.getElementById('{more_id}btn');"
+            f"var i=0;var r;"
+            f"while((r=document.getElementById('{more_id}r'+i))!==null){{r.style.display='';i++;}}"
+            f"c.style.display='none';"
+        )
+        show_more_btn = (
+            f'<tr id="{more_id}btn"><td colspan="3" style="padding:6px 4px;text-align:center">'
+            f'<button onclick="{js}" '
+            f'style="background:none;border:1px solid #d0d7de;border-radius:4px;cursor:pointer;'
+            f'font-size:11px;color:#57606a;padding:4px 14px;font-family:inherit">'
+            f'Show {len(rest)} more</button></td></tr>'
+        )
+
+    table_html = (
+        f'<table width="100%" cellpadding="0" cellspacing="0" '
+        f'style="border-collapse:collapse">'
+        f'<tbody>{rows_top}{rows_rest}{show_more_btn}</tbody></table>'
+    )
+
+    inner = f"""{_section_header("How I Collaborated", f"Here\u2019s how you interacted with {tool_name} \u2014 these are the working styles you\u2019ll lean on more as AI becomes central to how you work")}
 <div style="padding:16px 24px 18px">
   {summary_html}
-  <table width="100%" cellpadding="0" cellspacing="0"><tbody><tr>
-    <td style="width:50%;vertical-align:top;padding-right:8px">{left_col}</td>
-    <td style="width:50%;vertical-align:top;padding-left:8px">{right_col}</td>
-  </tr></tbody></table>
+  {table_html}
 </div>"""
     return _wrap_section(inner)
 
@@ -949,29 +987,19 @@ def _collab_comparison_section(copilot_modes: dict, claude_modes: dict,
     if not copilot_modes and not claude_modes:
         return ""
 
-    _COLOR = {
-        "Designing":         "#7b1fa2",
-        "Researching":       "#1a7f37",
-        "Building":          "#0078d4",
-        "Refining":          "#0969da",
-        "Course-correcting": "#e65100",
-        "Delegating":        "#6a737d",
-    }
-    _ICON = {
-        "Designing":         "🎨",
-        "Researching":       "🔬",
-        "Building":          "🏗",
-        "Refining":          "✨",
-        "Course-correcting": "🔧",
-        "Delegating":        "⚡",
-    }
+    # Derive color/icon/examples from _COLLAB_MODES (single source of truth)
+    _COLOR    = {n: color for n, _, _, color, _, _ in _COLLAB_MODES}
+    _ICON     = {n: icon  for n, icon, _, _, _, _ in _COLLAB_MODES}
     _EXAMPLES = {
-        "Building":          "e.g. implement a feature, scaffold a module, write a function from scratch",
-        "Refining":          "e.g. tweak layout, adjust error handling, rename variables, polish copy",
+        "Building":          "e.g. implement a feature, scaffold a module, write from scratch",
+        "Refining":          "e.g. tweak layout, adjust error handling, rename, polish copy",
         "Designing":         "e.g. plan architecture, choose a pattern, rethink an approach",
-        "Researching":       "e.g. compare libraries, investigate a failure, understand unexpected behavior",
+        "Researching":       "e.g. compare libraries, investigate a failure, understand behavior",
+        "Analyzing":         "e.g. analyze this dataset, summarize results, what does this chart show",
+        "Learning":          "e.g. how do I, explain this to me, what's the best practice",
+        "Reviewing":         "e.g. review this code, does this look right, any issues with this PR",
         "Delegating":        "e.g. git commit & push, update README, install packages, configure CI",
-        "Course-correcting": "e.g. fix a wrong assumption, undo a bad change, redirect after an error",
+        "Course-correcting": "e.g. fix a wrong assumption, undo a bad change, redirect AI",
     }
 
     all_modes = sorted(
@@ -1000,7 +1028,7 @@ def _collab_comparison_section(copilot_modes: dict, claude_modes: dict,
         follower_pct = min(cop_p, cla_p)
         insight_html = (
             f'<div style="background:#f6f8fa;border:1px solid #e1e4e8;border-radius:8px;'
-            f'padding:12px 16px;margin-bottom:20px;font-size:12px;color:#1b1f23;line-height:1.5">'
+            f'padding:12px 16px;margin-bottom:16px;font-size:12px;color:#1b1f23;line-height:1.5">'
             f'<strong>Biggest difference:</strong> <em>{_e(mode_name)}</em> — '
             f'{_e(leader)} {leader_pct:.0f}% vs {_e(follower)} {follower_pct:.0f}%'
             f'</div>'
@@ -1009,67 +1037,87 @@ def _collab_comparison_section(copilot_modes: dict, claude_modes: dict,
     cop_active = f"{int(copilot_active_min)//60}h {int(copilot_active_min)%60}m" if copilot_active_min >= 60 else f"{int(copilot_active_min)}m"
     cla_active = f"{int(claude_active_min)//60}h {int(claude_active_min)%60}m" if claude_active_min >= 60 else f"{int(claude_active_min)}m"
 
-    def _bar_row(tool_label, tool_color, pct, mins):
-        """Single horizontal bar row: label | ████░░░░ | pct · time"""
-        w       = max(int(pct), 1) if pct > 0 else 0
-        hrs_str = f"{int(mins)}m" if mins < 60 else f"{mins/60:.1f}h"
-        bar_html = (
-            f'<div style="background:#f0f2f5;border-radius:4px;height:10px;flex:1;overflow:hidden">'
-            f'<div style="background:{tool_color};border-radius:4px;height:10px;width:{w}%"></div>'
-            f'</div>'
-        ) if pct > 0 else (
-            f'<div style="background:#f0f2f5;border-radius:4px;height:10px;flex:1"></div>'
-        )
-        stat = f'<span style="font-size:11px;font-weight:700;color:{tool_color};white-space:nowrap;min-width:80px;text-align:right">{pct:.0f}% · {hrs_str}</span>' if pct > 0 else \
-               f'<span style="font-size:11px;color:#d0d7de;min-width:80px;text-align:right">—</span>'
-        return (
-            f'<div style="display:flex;align-items:center;gap:10px;padding:4px 0">'
-            f'<span style="font-size:10px;font-weight:700;color:{tool_color};text-transform:uppercase;'
-            f'letter-spacing:0.5px;min-width:120px;flex-shrink:0">{_e(tool_label)}</span>'
-            f'{bar_html}'
-            f'{stat}'
-            f'</div>'
-        )
+    # Legend row
+    legend_html = (
+        f'<div style="display:flex;gap:24px;margin-bottom:12px;font-size:11px;color:#6a737d">'
+        f'<span><span style="font-weight:700;color:{ACCENT["copilot"]}">● GitHub Copilot</span>'
+        f' &nbsp;{cop_active} active</span>'
+        f'<span><span style="font-weight:700;color:{ACCENT["claude"]}">● Claude</span>'
+        f' &nbsp;{cla_active} active</span>'
+        f'</div>'
+    )
 
-    mode_blocks = ""
-    for mode in all_modes:
+    # Table header
+    th = (
+        f'<tr style="border-bottom:2px solid #e1e4e8">'
+        f'<th style="padding:6px 8px;font-size:11px;font-weight:600;color:#6a737d;text-align:left;width:120px">Mode</th>'
+        f'<th style="padding:6px 8px;font-size:11px;font-weight:600;color:{ACCENT["copilot"]};text-align:center;width:80px">Copilot</th>'
+        f'<th style="padding:6px 8px;font-size:11px;font-weight:600;color:{ACCENT["claude"]};text-align:center;width:80px">Claude</th>'
+        f'<th style="padding:6px 8px;font-size:11px;font-weight:600;color:#6a737d;text-align:left">Activity type</th>'
+        f'</tr>'
+    )
+
+    import hashlib as _hl3
+    _cmid = _hl3.md5(b"comparison").hexdigest()[:6]
+
+    def _cmp_row(mode, hidden=False, row_id=""):
         cop_pct = copilot_modes.get(mode, 0) / cop_total * 100
         cla_pct = claude_modes.get(mode, 0) / cla_total * 100
         cop_min = copilot_modes.get(mode, 0)
         cla_min = claude_modes.get(mode, 0)
         color   = _COLOR.get(mode, "#6a737d")
         icon    = _ICON.get(mode, "")
-
-        cop_row = _bar_row("GitHub Copilot", ACCENT["copilot"], cop_pct, cop_min)
-        cla_row = _bar_row("Claude",         ACCENT["claude"],  cla_pct, cla_min)
         example = _EXAMPLES.get(mode, "")
 
-        mode_blocks += f"""
-<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #f0f2f5">
-  <div style="margin-bottom:5px">
-    <span style="font-size:12px;font-weight:700;color:{color}">
-      <span style="margin-right:5px">{icon}</span>{_e(mode)}
-    </span>
-    {f'<span style="font-size:10px;color:#6a737d;margin-left:8px;font-style:italic">{_e(example)}</span>' if example else ""}
-  </div>
-  {cop_row}
-  {cla_row}
-</div>"""
+        def _mini_bar(pct, color, mins):
+            w = max(int(pct), 1) if pct > 0 else 0
+            hrs = f"{int(mins)}m" if mins < 60 else f"{mins/60:.1f}h"
+            bar = f'<div style="background:#f0f2f5;border-radius:3px;height:8px;margin-bottom:3px"><div style="background:{color};border-radius:3px;height:8px;width:{w}%;min-width:2px"></div></div>' if pct > 0 else '<div style="height:8px;margin-bottom:3px"></div>'
+            val = f'<span style="font-size:12px;font-weight:700;color:{color}">{pct:.0f}%</span><span style="font-size:10px;color:#6a737d"> · {hrs}</span>' if pct > 0 else '<span style="font-size:11px;color:#d0d7de">—</span>'
+            return f'{bar}{val}'
 
-    inner = f"""{_section_header("How I Collaborated", "Each bar = % of that tool's own active time — compare style, not volume")}
-<div style="padding:16px 24px 4px">
+        id_attr = f' id="{row_id}"' if row_id else ""
+        disp    = ' style="display:none"' if hidden else ""
+        return (
+            f'<tr{id_attr}{disp} style="border-bottom:1px solid #f0f2f5">'
+            f'<td style="padding:10px 8px;vertical-align:middle">'
+            f'  <span style="font-size:14px;margin-right:5px">{icon}</span>'
+            f'  <span style="font-size:13px;font-weight:600;color:{color}">{_e(mode)}</span>'
+            f'</td>'
+            f'<td style="padding:10px 8px;vertical-align:middle;min-width:90px">{_mini_bar(cop_pct, ACCENT["copilot"], cop_min)}</td>'
+            f'<td style="padding:10px 8px;vertical-align:middle;min-width:90px">{_mini_bar(cla_pct, ACCENT["claude"], cla_min)}</td>'
+            f'<td style="padding:10px 8px;vertical-align:middle;font-size:10px;color:#8a8a8a;font-style:italic">{_e(example)}</td>'
+            f'</tr>'
+        )
+
+    top5 = all_modes[:5]
+    rest = all_modes[5:]
+    rows_top  = "".join(_cmp_row(m) for m in top5)
+    rows_rest = "".join(_cmp_row(m, hidden=True, row_id=f"{_cmid}r{i}") for i, m in enumerate(rest))
+
+    show_more = ""
+    if rest:
+        js = (f"var i=0;var r;while((r=document.getElementById('{_cmid}r'+i))!==null){{r.style.display='';i++;}}"
+              f"document.getElementById('{_cmid}btn').style.display='none';")
+        show_more = (
+            f'<tr id="{_cmid}btn"><td colspan="4" style="padding:6px;text-align:center">'
+            f'<button onclick="{js}" style="background:none;border:1px solid #d0d7de;border-radius:4px;'
+            f'cursor:pointer;font-size:11px;color:#57606a;padding:4px 14px;font-family:inherit">'
+            f'Show {len(rest)} more</button></td></tr>'
+        )
+
+    table_html = (
+        f'<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">'
+        f'<thead>{th}</thead>'
+        f'<tbody>{rows_top}{rows_rest}{show_more}</tbody>'
+        f'</table>'
+    )
+
+    inner = f"""{_section_header("How I Collaborated", "How your working style differs across tools \u2014 each column shows % of that tool\u2019s own active time")}
+<div style="padding:16px 24px 16px">
   {insight_html}
-  <div style="display:flex;gap:24px;margin-bottom:14px;font-size:11px;color:#6a737d">
-    <span>
-      <span style="font-weight:700;color:{ACCENT["copilot"]}">● GitHub Copilot</span>
-      &nbsp;<span style="color:#6a737d">{cop_active} active</span>
-    </span>
-    <span>
-      <span style="font-weight:700;color:{ACCENT["claude"]}">● Claude</span>
-      &nbsp;<span style="color:#6a737d">{cla_active} active</span>
-    </span>
-  </div>
-  {mode_blocks}
+  {legend_html}
+  {table_html}
 </div>"""
     return _wrap_section(inner)
 
@@ -1086,7 +1134,8 @@ def _timing_section(data: dict, source: str, tool_name: str,
         return ""
 
     split = copilot_buckets is not None and claude_buckets is not None
-    has_all = split and copilot_buckets_all is not None and claude_buckets_all is not None
+    has_all = (split and copilot_buckets_all is not None and claude_buckets_all is not None) \
+              or (not split and bool(data.get("time_buckets_all")))
 
     # Unique DOM id so multiple sections on the same page don't collide
     import hashlib as _hl
@@ -1142,6 +1191,21 @@ def _timing_section(data: dict, source: str, tool_name: str,
     legend = ""
     kpi_filtered = ""
     kpi_all = ""
+
+    if not split and has_all:
+        # Per-source tab: show simple interaction counts as KPI chips
+        accent = ACCENT.get(source, "#0969da")
+        active_h = data.get("active_minutes", 0) / 60
+        f_total = sum(buckets.values())
+        a_total = sum(data.get("time_buckets_all", buckets).values())
+        def _simple_chip(label, value, color):
+            return f"""<div style="background:#f6f8fa;border:1px solid #e1e4e8;border-radius:6px;
+                           padding:8px 14px;display:inline-block;margin-right:10px">
+  <div style="font-size:10px;color:#6a737d;margin-bottom:2px">{label}</div>
+  <div style="font-size:16px;font-weight:700;color:{color}">{value}<span style="font-size:10px;font-weight:400;color:#6a737d;margin-left:3px">interactions</span></div>
+</div>"""
+        kpi_filtered = f'<div style="margin-bottom:14px">{_simple_chip("Substantive prompts", f_total, accent)}</div>'
+        kpi_all      = f'<div style="margin-bottom:14px">{_simple_chip("All human interactions", a_total, accent)}</div>'
 
     if split:
         legend = f"""<div style="display:flex;gap:16px;margin-bottom:10px;font-size:11px;color:#6a737d">
@@ -1377,21 +1441,21 @@ def _evidence_section(data: dict, accent: str, vid: str = "") -> str:
   <td style="padding:8px 8px;text-align:center;font-size:11px;color:#6a737d;vertical-align:top">{turns}</td>
   <td style="padding:8px 8px;text-align:center;font-size:11px;color:#6a737d;vertical-align:top">{files_disp}</td>
   <td style="padding:8px 8px;text-align:center;font-size:11px;color:#6a737d;vertical-align:top">{itr_disp}</td>
-  <td style="padding:8px 8px;text-align:right;font-size:13px;font-weight:700;color:{accent};vertical-align:top;white-space:nowrap">{_fmt_h(det)}</td>
-  <td style="padding:8px 8px;text-align:right;font-size:13px;font-weight:700;color:#1a7f37;vertical-align:top;white-space:nowrap">
+  <td style="padding:8px 8px;text-align:right;font-size:15px;font-weight:700;color:{accent};vertical-align:top;white-space:nowrap">{_fmt_h(det)}</td>
+  <td style="padding:8px 8px;text-align:right;font-size:15px;font-weight:700;color:#1a7f37;vertical-align:top;white-space:nowrap">
     {_e(ai_cell)}
   </td>
 </tr>
 <tr style="border-bottom:1px solid #e8eaf0;background:#fafbfc">
-  <td style="padding:2px 8px 6px;font-size:9px;color:#6a737d">formula components</td>
-  <td colspan="3" style="padding:2px 8px 6px;font-size:9px;color:#6a737d">{formula_parts}</td>
-  <td colspan="5" style="padding:2px 8px 6px;text-align:right;font-size:10px;font-weight:700;color:{accent}">{_fmt_h(det)}</td>
+  <td style="padding:2px 8px 6px;font-size:10px;color:#6a737d">formula components</td>
+  <td colspan="3" style="padding:2px 8px 6px;font-size:10px;color:#6a737d">{formula_parts}</td>
+  <td colspan="5" style="padding:2px 8px 6px;text-align:right;font-size:11px;font-weight:700;color:{accent}">{_fmt_h(det)}</td>
 </tr>"""
 
     total_row = f"""<tr style="background:#f0f2f5;border-top:2px solid {accent}">
-  <td colspan="7" style="padding:8px 10px;font-size:11px;font-weight:700;color:#1b1f23;text-align:right">Total</td>
-  <td style="padding:8px 10px;text-align:right;font-size:14px;font-weight:700;color:{accent}">{_fmt_h(total_det)}</td>
-  <td style="padding:8px 10px;text-align:right;font-size:14px;font-weight:700;color:#1a7f37">{_fmt_h(total_ai_est) if total_ai_est else "—"}</td>
+  <td colspan="7" style="padding:10px 10px;font-size:12px;font-weight:700;color:#1b1f23;text-align:right">Total</td>
+  <td style="padding:10px 10px;text-align:right;font-size:17px;font-weight:700;color:{accent}">{_fmt_h(total_det)}</td>
+  <td style="padding:10px 10px;text-align:right;font-size:17px;font-weight:700;color:#1a7f37">{_fmt_h(total_ai_est) if total_ai_est else "—"}</td>
 </tr>"""
 
     # ── Methodology (collapsible) ─────────────────────────────────────────────
@@ -1649,9 +1713,9 @@ def _source_view(view_id: str, data: dict | None, source: str,
     narrative = _narrative_row(data, accent, vid=view_id)
     kpis      = _kpi_row(data, source, active_days, vid=view_id)
     roi       = _roi_row(hours, n_days, source, active_min=active_min_v)
-    goals_sec = _goals_section(goals, source, show_date=True, vid=view_id)
+    goals_sec = _goals_section(goals, source, show_date=True, vid=view_id, session_metrics=data.get("session_metrics", {}))
     produced  = _produced_section(data, accent)
-    skills    = _skills_section(goals, accent)
+    skills    = _skills_section(goals, accent, tool_name)
     collab    = _collab_section(data, source, tool_name)
     timing    = _timing_section(data, source, tool_name)
     numbers   = _numbers_section(data, source, n_days)
