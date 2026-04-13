@@ -1191,15 +1191,15 @@ def _timing_section(data: dict, source: str, tool_name: str,
       a.style.display=showAll?'':'none';
       kf.style.display=showAll?'none':'';
       ka.style.display=showAll?'':'none';
-      b.textContent=showAll?'Exclude trivial':'Include trivial';
+      b.textContent=showAll?'Substantive only':'Include short responses';
     }})()"
     style="font-size:10px;padding:3px 10px;border:1px solid #d0d7de;border-radius:4px;
            background:#f6f8fa;color:#57606a;cursor:pointer;white-space:nowrap">
-    Include trivial
+    Include short responses
   </button>
 </div>"""
 
-    subtitle = "Non-trivial prompts by time of day — approvals, single-key responses, and idle time excluded"
+    subtitle = "Substantive prompts (4+ words) by time of day — toggle adds approvals, short responses, and Enter-to-approve interactions"
     inner = f"""{_section_header("When I Worked", subtitle, extra=toggle_html)}
 <div style="padding:14px 24px 18px">
   <div id="kpi-f-{_uid}">{kpi_filtered}</div>

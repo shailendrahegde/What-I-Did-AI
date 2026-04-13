@@ -289,8 +289,9 @@ def _parse_session_file(jsonl_path: Path, target_date: str, project_name: str, s
             break
 
     # Process records chronologically
-    messages            = []
-    trivial_timestamps  = []   # timestamps of approval/trivial messages (not in messages[])
+    messages               = []
+    short_timestamps       = []   # human short responses: approvals + 1–3 keystroke inputs
+    tool_result_timestamps = []   # automated tool-execution result records (not human input)
     tokens        = {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}
     git_ops       = []
     git_repos     = []
@@ -316,13 +317,13 @@ def _parse_session_file(jsonl_path: Path, target_date: str, project_name: str, s
 
             content = r.get("message", {}).get("content", "") if isinstance(r.get("message"), dict) else r.get("message", "")
 
-            # Tool-result records = tool-execution approvals (user pressed Enter/Y in TUI).
-            # They have no text content — count them as trivial approvals.
+            # Tool-result records = Claude Code returning tool output to the model.
+            # This is automated pipeline traffic, not a human interaction.
             has_tool_result = isinstance(content, list) and any(
                 isinstance(c, dict) and c.get("type") == "tool_result" for c in content
             )
             if has_tool_result:
-                trivial_timestamps.append(ts)
+                tool_result_timestamps.append(ts)
                 # Still extract any accompanying text (rare but possible)
 
             text = _extract_text_from_content(content)
@@ -330,10 +331,13 @@ def _parse_session_file(jsonl_path: Path, target_date: str, project_name: str, s
             if not text or len(text.strip()) == 0:
                 continue
 
-            # Skip pure text approvals and single-digit menu selections (e.g. "1", "2")
+            # Short human responses: known approvals + 1–3 keystroke inputs
             cleaned = text.strip().rstrip(".!").lower()
-            if len(cleaned.split()) <= 8 and (cleaned in _APPROVALS or _re.fullmatch(r'\d{1,2}', cleaned)):
-                trivial_timestamps.append(ts)
+            words = cleaned.split()
+            if (cleaned in _APPROVALS
+                    or len(words) < 4          # fewer than 4 words = short/keystroke response
+                    or _re.fullmatch(r'\d{1,3}', cleaned)):
+                short_timestamps.append(ts)
                 continue
 
             if not session_start:
@@ -447,7 +451,8 @@ def _parse_session_file(jsonl_path: Path, target_date: str, project_name: str, s
         "lines_removed":  0,
         "files_touched":  sorted(files_touched),
         "tool_invocations":    sum(len(m.get("tools_after", [])) for m in messages if m["role"] == "user"),
-        "trivial_timestamps":  trivial_timestamps,
+        "short_timestamps":        short_timestamps,
+        "tool_result_timestamps":  tool_result_timestamps,
         "git_branch":          git_branch,
     }
 

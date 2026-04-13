@@ -496,8 +496,8 @@ def _compute_extra_metrics(sessions: list) -> dict:
     except Exception:
         local_offset = timedelta(0)
 
-    hourly:         dict[int, int] = {h: 0 for h in range(24)}
-    hourly_trivial: dict[int, int] = {h: 0 for h in range(24)}
+    hourly:         dict[int, int] = {h: 0 for h in range(24)}  # substantive prompts
+    hourly_short:   dict[int, int] = {h: 0 for h in range(24)}  # approvals + short keystrokes
     intent_counts:  dict[str, int] = {}
 
     sample_messages: dict[str, list] = {}
@@ -525,17 +525,26 @@ def _compute_extra_metrics(sessions: list) -> dict:
                     "date": ts[:10],
                 })
 
+        def _add_to(hourly_map, timestamps):
+            for ts in timestamps:
+                try:
+                    dt_utc  = datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S")
+                    local_h = (dt_utc + local_offset).hour
+                    hourly_map[local_h] = hourly_map.get(local_h, 0) + 1
+                except Exception:
+                    pass
+
+        # short_timestamps = typed approvals + short-word responses (backward-compat chain)
+        _add_to(hourly_short, s.get("short_timestamps",
+                               s.get("approval_timestamps",
+                               s.get("trivial_timestamps", []))))
+        # tool_result_timestamps = Enter-to-approve presses (arrow nav + Enter, default select)
+        # these are human actions, count them in the short bucket
+        _add_to(hourly_short, s.get("tool_result_timestamps", []))
+
     # Keep the 8 longest per intent (displayed sorted by recency)
     for k in sample_messages:
         sample_messages[k] = sorted(sample_messages[k], key=lambda m: -len(m["text"]))[:8]
-        # Count trivial/approval messages per hour separately
-        for ts in s.get("trivial_timestamps", []):
-            try:
-                dt_utc  = datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S")
-                local_h = (dt_utc + local_offset).hour
-                hourly_trivial[local_h] = hourly_trivial.get(local_h, 0) + 1
-            except Exception:
-                pass
 
     def _bucket(h_map):
         return {
@@ -546,9 +555,9 @@ def _compute_extra_metrics(sessions: list) -> dict:
             "Night (9pm\u20131am)":       sum(h_map[h] for h in range(21, 24)) + h_map.get(0, 0),
         }
 
-    time_buckets = _bucket(hourly)
-    time_buckets_all = {
-        k: time_buckets[k] + _bucket(hourly_trivial)[k]
+    time_buckets     = _bucket(hourly)        # substantive prompts (4+ words) — default
+    time_buckets_all = {                       # substantive + short responses — toggle
+        k: time_buckets[k] + _bucket(hourly_short)[k]
         for k in time_buckets
     }
 

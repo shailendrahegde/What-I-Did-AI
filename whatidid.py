@@ -56,8 +56,9 @@ def _resolve_dates(args) -> list[str]:
     if getattr(args, "_30D", False):
         return [(today - timedelta(days=i)).isoformat() for i in range(30)]
 
-    if args.date_from and args.date_to:
-        d0, d1 = _parse_date(args.date_from), _parse_date(args.date_to)
+    if args.date_from:
+        d0 = _parse_date(args.date_from)
+        d1 = _parse_date(args.date_to) if args.date_to else today
         if d0 and d1:
             out, cur = [], d0
             while cur <= d1:
