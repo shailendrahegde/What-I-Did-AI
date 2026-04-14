@@ -160,6 +160,19 @@ def _fmt_h(h: float) -> str:
     return f"{h:.1f}h"
 
 
+def _fmt_tokens(t) -> str:
+    """Format a token count (int or tokens-dict with 'total' key) with K/M suffix."""
+    if isinstance(t, dict):
+        n = int(t.get("total", 0) or 0)
+    else:
+        n = int(t or 0)
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.0f}K"
+    return str(n) if n else ""
+
+
 def _sum_goal_hours(analysis: dict | None) -> float:
     if not analysis:
         return 0.0
@@ -555,10 +568,9 @@ def _goals_section(goals: list, source: str, show_date: bool = False, vid: str =
     # Sort by hours descending — must match _narrative_row sort so numbered items align
     goals = sorted(goals, key=lambda g: -(g.get("human_hours") or 0))
 
-    def _fmt_tok(n: int) -> str:
-        if n >= 1_000_000: return f"{n/1_000_000:.1f}M"
-        if n >= 1_000:     return f"{n/1_000:.0f}K"
-        return str(n)
+    # Accumulate totals for footer
+    total_goal_hours  = sum(g.get("human_hours") or 0 for g in goals)
+    total_goal_tokens = 0
 
     # Group into top-5 visible + rest collapsible
     for gi, g in enumerate(goals):
@@ -569,18 +581,33 @@ def _goals_section(goals: list, source: str, show_date: bool = False, vid: str =
         date  = g.get("_date", "")
         tasks = g.get("tasks", [])
 
-        # Token/cost column — Claude: real tokens + API cost; Copilot: conversation turns (flat sub)
-        sm_proj = session_metrics.get(proj, {})
-        proj_tokens = sm_proj.get("tokens", {})
-        proj_total_tok = proj_tokens.get("total", 0)
-        proj_cost = _token_cost(proj_tokens)
-        if proj_total_tok > 0:
+        # Token column — resolve from session_metrics; handle int or dict
+        sm_proj    = session_metrics.get(proj, {})
+        tok_raw    = sm_proj.get("tokens", {})
+        proj_tokens = tok_raw if isinstance(tok_raw, dict) else {}
+        proj_total_tok = proj_tokens.get("total", 0) if isinstance(tok_raw, dict) else int(tok_raw or 0)
+        total_goal_tokens += proj_total_tok
+        tok_str = _fmt_tokens(proj_total_tok)
+        if tok_str:
             token_cell = (
-                f'<div style="font-size:14px;font-weight:700;color:{accent}">{_fmt_tok(proj_total_tok)}</div>'
+                f'<div style="font-size:14px;font-weight:700;color:#1a7f37">{tok_str}</div>'
                 f'<div style="font-size:9px;color:#6a737d;margin-top:1px">tokens</div>'
             )
         else:
             token_cell = ""
+
+        # Domain-skills pills for goal header (top 3, domain only — no tech badges)
+        goal_skills: list[str] = []
+        for t in tasks:
+            for s in t.get("domain_skills", [])[:2]:
+                if s not in goal_skills:
+                    goal_skills.append(s)
+        goal_skills = goal_skills[:3]
+        skills_cell = "".join(
+            f'<span style="background:{accent_bg};color:{accent};padding:1px 6px;border-radius:7px;'
+            f'font-size:10px;font-weight:600;display:inline-block;margin:1px 2px">{_e(s)}</span>'
+            for s in goal_skills
+        )
 
         date_badge = f'<span style="font-size:10px;font-weight:600;color:{accent};background:{accent_bg};padding:1px 7px;border-radius:8px;margin-right:6px;white-space:nowrap">{_e(date[5:])}</span>' if (show_date and date) else ""
 
@@ -589,13 +616,16 @@ def _goals_section(goals: list, source: str, show_date: bool = False, vid: str =
     <div style="width:22px;height:22px;background:{accent};border-radius:50%;
                 color:#fff;font-size:11px;font-weight:700;text-align:center;line-height:22px">{gi+1}</div>
   </td>
-  <td style="padding:10px 8px;border-bottom:1px solid #dde1e7;vertical-align:middle;width:58%">
+  <td style="padding:10px 8px;border-bottom:1px solid #dde1e7;vertical-align:middle;width:44%">
     <div style="font-size:12px;font-weight:600;color:#1b1f23;line-height:1.35">
       <span id="{gid}-arrow" style="font-size:10px;color:{accent};margin-right:5px">&#9654;</span>
       {date_badge}{_e(title)}
     </div>
   </td>
-  <td style="padding:10px 12px;border-bottom:1px solid #dde1e7;vertical-align:middle;text-align:center;width:22%;border-left:1px solid #f0f2f5">
+  <td style="padding:10px 8px;border-bottom:1px solid #dde1e7;vertical-align:middle;width:18%;border-left:1px solid #f0f2f5">
+    {skills_cell}
+  </td>
+  <td style="padding:10px 12px;border-bottom:1px solid #dde1e7;vertical-align:middle;text-align:center;width:18%;border-left:1px solid #f0f2f5">
     {token_cell}
   </td>
   <td style="padding:10px 8px;border-bottom:1px solid #dde1e7;vertical-align:middle;text-align:right;width:16%">
@@ -607,10 +637,8 @@ def _goals_section(goals: list, source: str, show_date: bool = False, vid: str =
         # Task detail rows
         task_rows = ""
         for t in tasks:
-            what   = _e(t.get("what_got_done",""))
-            ttype  = _e(t.get("task_type",""))
-            th     = t.get("human_hours") or 0
-            roles  = ", ".join(t.get("professional_roles",[])[:2])
+            what  = _e(t.get("what_got_done",""))
+            th    = t.get("human_hours") or 0
             dp = "".join(
                 f'<span style="background:{DOMAIN_PILL_BG};color:{DOMAIN_PILL_FG};padding:1px 6px;border-radius:7px;font-size:10px;font-weight:600;display:inline-block;margin:1px 2px">{_e(s)}</span>'
                 for s in t.get("domain_skills",[])[:3]
@@ -632,7 +660,7 @@ def _goals_section(goals: list, source: str, show_date: bool = False, vid: str =
 </tr>"""
 
         task_section = f"""<tr id="{gid}-tasks" style="display:none">
-  <td colspan="4" style="padding:0 8px 8px;background:#f7f9fc">
+  <td colspan="5" style="padding:0 8px 8px;background:#f7f9fc">
     <table width="100%" cellpadding="0" cellspacing="0"
            style="border-top:1px solid #dde1e7">
       <tbody>{task_rows}</tbody>
@@ -641,6 +669,14 @@ def _goals_section(goals: list, source: str, show_date: bool = False, vid: str =
 </tr>"""
 
         rows.append(goal_row + task_section)
+
+    # Footer row with totals
+    footer_tok_str = _fmt_tokens(total_goal_tokens) if total_goal_tokens else "—"
+    footer_row = f"""<tr style="background:#f0f2f5;border-top:2px solid {accent}">
+  <td colspan="3" style="padding:8px 10px;font-size:11px;font-weight:700;color:#6a737d;text-align:right">Total</td>
+  <td style="padding:8px 10px;text-align:center;font-size:13px;font-weight:700;color:#1a7f37">{footer_tok_str}</td>
+  <td style="padding:8px 10px;text-align:right;font-size:15px;font-weight:700;color:{accent}">{_fmt_h(total_goal_hours)}</td>
+</tr>"""
 
     # Show more button if >5 goals
     visible    = "".join(rows[:5])
@@ -667,7 +703,7 @@ def _goals_section(goals: list, source: str, show_date: bool = False, vid: str =
   </div>
   <table width="100%" cellpadding="0" cellspacing="0"
          style="border:1px solid #dde1e7;border-radius:7px;overflow:hidden">
-    <tbody>{visible}</tbody>
+    <tbody>{visible}{footer_row}</tbody>
   </table>
   {extra_html}
 </div>"""
@@ -1794,10 +1830,10 @@ def _top_projects_card(goals: list, source: str, tool_name: str, top_n: int = 5)
         date    = g.get("_date", "")
         tasks   = g.get("tasks", [])
         summary = g.get("summary", "")
-        # Collect skills (deduped)
+        # Collect domain skills only (no tech/language badges)
         skills: list[str] = []
         for t in tasks:
-            for s in t.get("domain_skills", [])[:1] + t.get("tech_skills", [])[:1]:
+            for s in t.get("domain_skills", [])[:2]:
                 if s not in skills:
                     skills.append(s)
         skills = skills[:3]
