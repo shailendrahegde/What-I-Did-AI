@@ -43,7 +43,12 @@ git clone https://github.com/shailendrahegde/What-I-Did-AI.git
 cd What-I-Did-AI
 ```
 
-Run the subsequent steps inside **Claude Code** or **GitHub Copilot** — no extra packages needed. The tool auto-detects which AI backend is available (see below).
+Run the subsequent steps inside **Claude Code**  — no extra packages needed. The tool auto-detects which AI backend is available (see below).
+
+```bash
+Claude
+```
+
 
 If you prefer to call the Anthropic API directly:
 
