@@ -49,14 +49,6 @@ Run the subsequent steps inside **Claude Code**  — no extra packages needed. T
 Claude
 ```
 
-
-If you prefer to call the Anthropic API directly:
-
-```bash
-pip install anthropic
-export ANTHROPIC_API_KEY=sk-ant-...
-```
-
 **Run**
 
 ```bash
